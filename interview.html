@@ -1075,20 +1075,25 @@ function aiSettingsModal() {
     <label class="field"><span>1. AI 서비스 고르기</span><select id="aiP">${Object.keys(AI_NAME).map((k) => `<option value="${k}" ${cfg.provider === k ? "selected" : ""}>${AI_NAME[k]}</option>`).join("")}</select></label>
     <div class="guide" id="aiG">${guide(cfg.provider)}</div>
     <label class="field"><span>2. API 키 붙여 넣기</span><input id="aiK" type="password" value="${esc(cfg.key)}" autocomplete="off" placeholder="복사한 키를 붙여 넣으세요"></label>
-    <label class="field"><span>3. 모델 고르기</span><div style="display:flex;gap:8px"><input id="aiM" list="aiML" value="${esc(cfg.model)}"><button class="btn" id="aiList" type="button">목록 불러오기</button></div><datalist id="aiML"></datalist>
-      <small>잘 모르겠으면 '목록 불러오기'를 누른 뒤 칸을 눌러 고르세요. 이름에 flash, mini, haiku가 들어간 모델이 빠르고 저렴합니다.</small></label>
+    <div class="field"><span>3. 모델 고르기</span><div style="display:flex;gap:8px"><input id="aiM" value="${esc(cfg.model)}" aria-label="모델 이름"><button class="btn" id="aiList" type="button">목록 불러오기</button></div>
+      <select id="aiMS" aria-label="불러온 모델 목록" style="display:none;margin-top:8px"></select>
+      <small>'목록 불러오기'를 누르면 이 키로 쓸 수 있는 모델이 전부 아래 목록에 나옵니다. 목록에서 고르면 위 칸에 들어갑니다. 이름에 flash, mini, haiku가 들어간 모델이 빠르고 저렴합니다.</small></div>
     <label class="field"><span>4. 첨삭 지침 덧붙이기 (선택)</span><textarea id="aiX" rows="3" placeholder="예: 우리 반은 두괄식을 특히 강조해 주세요. 고친 이유는 반말로 다정하게 써 주세요.">${esc(cfg.extra || "")}</textarea><small>AI가 첨삭할 때마다 이 지침을 함께 따릅니다.</small></label>
     <p class="err" id="aiMsg" role="status"></p>
     <p class="muted small">AI에는 학교, 학과, 질문, 답변 글만 보냅니다. 학생 이름과 반, 번호는 보내지 않습니다.</p>
     <div class="acts"><button class="btn ghost danger" id="aiDel">연결 지우기</button><button class="btn" id="aiTest">연결 확인</button><button class="btn" id="aiClose">닫기</button><button class="btn primary" id="aiSave">저장</button></div>`, true);
   const read = () => ({ provider: $("#aiP", m).value, key: $("#aiK", m).value.trim(), model: $("#aiM", m).value.trim(), extra: $("#aiX", m).value.trim() });
   const msg = (t, bad) => { const el = $("#aiMsg", m); el.textContent = t; el.style.color = bad ? "var(--danger)" : "var(--ok)"; };
-  $("#aiP", m).onchange = () => { const p = $("#aiP", m).value; $("#aiM", m).value = AI_DEFAULT[p]; $("#aiML", m).innerHTML = ""; $("#aiG", m).innerHTML = guide(p); };
+  const sel = $("#aiMS", m);
+  sel.onchange = () => { if (sel.value) $("#aiM", m).value = sel.value; };
+  $("#aiP", m).onchange = () => { const p = $("#aiP", m).value; $("#aiM", m).value = AI_DEFAULT[p]; sel.innerHTML = ""; sel.style.display = "none"; $("#aiG", m).innerHTML = guide(p); };
   $("#aiClose", m).onclick = () => m.remove();
   $("#aiDel", m).onclick = () => { LS.del(aiKeyName()); m.remove(); rerender(); };
   $("#aiSave", m).onclick = () => { const c = read(); if (!c.key || !c.model) return msg("키와 모델을 모두 적어 주세요.", true); LS.set(aiKeyName(), JSON.stringify(c)); m.remove(); rerender(); toast("AI 연결을 저장했습니다."); };
   $("#aiList", m).onclick = async () => { const c = read(); if (!c.key) return msg("먼저 API 키를 넣어 주세요.", true); msg("불러오는 중");
-    try { const list = await aiListModels(c); $("#aiML", m).innerHTML = list.map((x) => `<option value="${esc(x)}">`).join(""); msg(`모델 ${list.length}개를 불러왔습니다. 모델 칸을 지우고 눌러 고르세요.`); } catch (e) { msg(e.message, true); } };
+    try { const list = (await aiListModels(c)).sort((a, b) => b.localeCompare(a, "en", { numeric: true }));
+      sel.innerHTML = `<option value="">불러온 모델 ${list.length}개 중에서 고르기 (최신 순)</option>` + list.map((x) => `<option ${x === c.model ? "selected" : ""}>${esc(x)}</option>`).join(""); sel.style.display = "";
+      msg(`모델 ${list.length}개를 불러왔습니다. 아래 목록에서 고르세요.`); } catch (e) { msg(e.message, true); } };
   $("#aiTest", m).onclick = async () => { const c = read(); if (!c.key || !c.model) return msg("키와 모델을 모두 적어 주세요.", true); msg("확인하는 중");
     try { await aiChat(c, "간단히 답하세요.", '{"ok":true} 라고만 JSON으로 답하세요.'); msg("연결되었습니다. 저장을 누르세요."); } catch (e) { msg(e.message, true); } };
 }
@@ -1334,14 +1339,15 @@ function renderAdmin() {
   }
   if (A.tab === "teachers") body = `<div class="card pad">
       <h3 style="font-size:18px;font-weight:800;margin-bottom:4px">담임 계정</h3>
-      <p class="muted small" style="margin-bottom:12px">반마다 담임 이름을 넣고 '만들기'를 누르면 초기 비밀번호 <b>1234</b>로 계정이 만들어집니다. 담임 선생님은 담임 주소에서 이름과 비밀번호로 로그인하면 자기 반만 보이고, 처음 들어오면 비밀번호를 바꾸라는 창이 뜹니다. 이미 있는 계정은 비밀번호 칸을 비워 두면 이름만 바뀝니다.</p>
+      <p class="muted small" style="margin-bottom:12px">담임 이름을 반마다 적고 맨 아래 <b>저장하기</b>를 한 번 누르면 됩니다. 새 계정은 초기 비밀번호 <b>1234</b>로 만들어집니다. 담임 선생님은 담임 주소에서 이름과 비밀번호로 로그인하면 자기 반만 보이고, 처음 들어오면 비밀번호를 바꾸라는 창이 뜹니다. 이미 있는 계정은 비밀번호 칸을 비워 두면 이름만 바뀝니다.</p>
       <div style="overflow-x:auto"><table class="roster" id="tTbl"><thead><tr><th class="w1">반</th><th>담임 이름</th><th>비밀번호</th><th>상태</th><th></th></tr></thead><tbody>
       ${D.classes.map((c) => { const t = A.data.teachers[c]; return `<tr data-cls="${c}"><td><b>${c}반</b></td>
         <td><input class="input" data-t="name" value="${esc(t?.name || "")}" placeholder="예: 홍길동" aria-label="${c}반 담임 이름"></td>
         <td><input class="input" data-t="pass" placeholder="${t ? "바꿀 때만 입력" : "비우면 1234"}" autocomplete="off" aria-label="${c}반 비밀번호"></td>
         <td style="white-space:nowrap">${t ? `<span class="chip green">사용 중</span>` : `<span class="chip amber">아직 없음</span>`}</td>
-        <td style="text-align:right;white-space:nowrap"><button class="btn sm pill primary" data-act="aSetT">${t ? "저장" : "만들기"}</button>${t ? ` <button class="btn sm danger" data-act="aDelT" title="계정 닫기">✕</button>` : ""}</td></tr>`; }).join("")}
+        <td style="text-align:right;white-space:nowrap">${t ? `<button class="btn sm danger" data-act="aDelT" title="계정 닫기" aria-label="${c}반 계정 닫기">✕</button>` : ""}</td></tr>`; }).join("")}
       </tbody></table></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn pill primary" data-act="aSetT">저장하기</button></div>
       <p class="muted small" style="margin-top:12px">담임 선생님은 로그인한 뒤 오른쪽 위 '비밀번호 바꾸기'에서 본인 비밀번호로 바꿀 수 있고, 'AI 설정'에서 본인 API 키를 넣습니다. 관리자 코드 자체는 Netlify의 환경변수 TEACHER_CODE에서 바꿉니다.</p></div>`;
   app.innerHTML = `<header class="nav"><div class="in"><div class="brand"><b>${LOGO}</b><span class="hide-m">관리자</span></div>
       <div class="seg">${[["status", "현황"], ["students", "학생 명단·비밀번호·가내신"], ["dates", "입시 일정"], ["teachers", "담임 계정"]].map(([k, l]) => `<button class="${A.tab === k ? "on" : ""}" data-act="aTab" data-v="${k}">${l}</button>`).join("")}</div>
@@ -1433,11 +1439,17 @@ app.addEventListener("click", async (e) => {
       }
       if (act === "aReset") { if (!(await ask("비밀번호 초기화", `${b.dataset.name} 학생의 비밀번호를 생년월일 6자리로 되돌립니다. 다음에 들어올 때 새 비밀번호를 다시 만들게 됩니다.`, "초기화"))) return; await API.call("adminResetStudent", { code: A.code, key: b.dataset.key }); await loadAdmin(); toast("생년월일로 초기화했습니다."); }
       if (act === "aRemove") { if (!(await ask("학생 삭제", `${b.dataset.name} 학생을 명단에서 빼고, 쓴 답변과 첨삭도 함께 지웁니다. 되돌릴 수 없습니다.`, "삭제", true))) return; await API.call("adminRemoveStudent", { code: A.code, key: b.dataset.key, withData: true }); await loadAdmin(); toast("삭제했습니다."); }
-      if (act === "aSetT") { const tr = b.closest("tr"), cls = Number(tr.dataset.cls), name = $("[data-t=name]", tr).value.trim(), pass = $("[data-t=pass]", tr).value.trim();
-        if (!name) return toast("담임 이름을 적어 주세요.");
-        const dup = D.classes.find((c) => c !== cls && (A.data.teachers[c]?.name || "").replace(/\s/g, "") === name.replace(/\s/g, ""));
-        if (dup && !(await ask("같은 이름이 있습니다", `${dup}반 담임도 '${name}'입니다. 이름이 같으면 비밀번호로 반을 구분하므로, 두 반의 비밀번호를 서로 다르게 해 주세요.`, "그대로 저장"))) return;
-        const fresh = !A.data.teachers[cls]; await API.call("adminSetTeacher", { code: A.code, cls, name, pass }); await loadAdmin(); toast(fresh && !pass ? `${cls}반 담임 계정을 만들었습니다. 초기 비밀번호는 1234입니다.` : `${cls}반 담임 계정을 저장했습니다.`); }
+      if (act === "aSetT") {
+        const rows = $$("#tTbl tbody tr").map((tr) => ({ cls: Number(tr.dataset.cls), name: $("[data-t=name]", tr).value.trim(), pass: $("[data-t=pass]", tr).value.trim() }));
+        const todo = rows.filter((r) => { const cur = A.data.teachers[r.cls]; return r.name && (!cur || cur.name !== r.name || r.pass); });
+        const noName = rows.find((r) => !r.name && (r.pass || A.data.teachers[r.cls]));
+        if (noName) return toast(`${noName.cls}반 담임 이름이 비어 있습니다. 계정을 없애려면 ✕를 누르세요.`);
+        const short = todo.find((r) => r.pass && r.pass.length < 4); if (short) return toast(`${short.cls}반 비밀번호는 4자 이상이어야 합니다.`);
+        if (!todo.length) return toast("바뀐 내용이 없습니다.");
+        const names = rows.filter((r) => r.name).map((r) => r.name.replace(/\s/g, "")), dup = names.find((n, i) => names.indexOf(n) !== i);
+        if (dup && !(await ask("같은 이름이 있습니다", `'${dup}' 이름이 두 반에 있습니다. 이름이 같으면 비밀번호로 반을 구분하므로 두 반의 비밀번호를 서로 다르게 해 주세요.`, "그대로 저장"))) return;
+        let made = 0; for (const r of todo) { if (!A.data.teachers[r.cls] && !r.pass) made++; await API.call("adminSetTeacher", { code: A.code, cls: r.cls, name: r.name, pass: r.pass }); }
+        await loadAdmin(); toast(`${todo.map((r) => r.cls + "반").join(", ")} 담임 계정을 저장했습니다.${made ? " 새 계정의 초기 비밀번호는 1234입니다." : ""}`); }
       if (act === "aDelT") { const cls = Number(b.closest("tr").dataset.cls); if (!(await ask("담임 계정 닫기", `${cls}반 담임 로그인을 막습니다. 다시 만들면 쓸 수 있습니다.`, "닫기", true))) return; await API.call("adminSetTeacher", { code: A.code, cls, remove: true }); await loadAdmin(); toast("계정을 닫았습니다."); }
     } catch (er) { toast(er.message); }
     return renderAdmin();
