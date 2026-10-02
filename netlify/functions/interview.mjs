@@ -4,7 +4,7 @@
 import { getStore } from "@netlify/blobs";
 import { createHash, randomBytes } from "node:crypto";
 
-const SERVER_VERSION = 10; // 화면(interview.html)과 짝이 맞는지 확인하는 번호
+const SERVER_VERSION = 12; // 화면(interview.html)과 짝이 맞는지 확인하는 번호
 const MAX_ANSWER = 3000;
 class Http extends Error { constructor(message, status = 400, extra = {}) { super(message); this.status = status; this.extra = extra; } }
 
@@ -56,7 +56,7 @@ async function teacherAuth(store, auth) {
     return { scope: "all", label: "관리자" };
   }
   const cls = Number(auth.cls);
-  if (!(cls >= 1 && cls <= 20)) throw new Http("반을 확인하세요.");
+  if (!(cls >= 0 && cls <= 20)) throw new Http("반을 확인하세요.");
   const t = await store.get("t/" + cls, { type: "json" });
   if (!t) throw new Http(`${cls}반 담임 비밀번호가 아직 없습니다. 관리자 페이지에서 먼저 만들어 주세요.`, 401);
   if (t.hash !== hash(String(auth.pass || ""), t.salt)) throw new Http("비밀번호가 맞지 않습니다.", 401);
@@ -70,7 +70,8 @@ async function handle(body, store) {
   /* ---------- 누구나: 질문 데이터(담임이 고친 내용) ---------- */
   // 질문 데이터는 두 겹: 학년 공통(관리자가 고침) + 반별(담임이 고침, 그 반 학생에게만 보임)
   if (action === "getData") {
-    const want = body.cls === "all" ? "all" : Number(body.cls) || 0;
+    const hasCls = body.cls !== undefined && body.cls !== null && body.cls !== "" && body.cls !== "all" && Number.isInteger(Number(body.cls));
+    const want = body.cls === "all" ? "all" : hasCls ? Number(body.cls) : null;
     const { blobs } = await store.list({ prefix: "cfg/" });
     const out = { schools: {}, common: null }, classes = {};
     const layer = (c) => (classes[c] = classes[c] || { schools: {}, common: null });
@@ -83,7 +84,10 @@ async function handle(body, store) {
       else if (b.key === "cfg/common") out.common = v;
       else if (b.key.startsWith("cfg/s/")) out.schools[b.key.slice(6)] = v;
     }));
-    if (want === "all") out.classes = classes; else if (want) out.cls = classes[want] || { schools: {}, common: null };
+    if (want === "all") out.classes = classes; else if (want !== null) out.cls = classes[want] || { schools: {}, common: null };
+    // 명단에 실제로 있는 반 번호 (기본 1~7반 밖의 반도 로그인 화면에 나오게)
+    const roster = (await store.get("roster", { type: "json" })) || {};
+    out.rosterClasses = [...new Set(Object.keys(roster).map((k) => Number(k.split("-")[0])))].sort((a, b) => a - b);
     return { cfg: out };
   }
 
@@ -99,7 +103,7 @@ async function handle(body, store) {
   // 처음에는 명단에 등록된 생년월일 6자리로 들어오고, 바로 새 비밀번호를 만든다.
   if (action === "studentLogin" || action === "studentSave" || action === "studentSetPin") {
     const cls = Number(body.cls), num = Number(body.num), pin = String(body.pin || "");
-    if (!(cls >= 1 && cls <= 20) || !(num >= 1 && num <= 50)) throw new Http("반과 번호를 확인하세요.");
+    if (!(cls >= 0 && cls <= 20) || !(num >= 1 && num <= 50)) throw new Http("반과 번호를 확인하세요.");
     const key = `${cls}-${num}`;
     const roster = (await store.get("roster", { type: "json" })) || {};
     const r = roster[key];
@@ -179,8 +183,8 @@ async function handle(body, store) {
       const rows = Array.isArray(body.rows) ? body.rows.slice(0, 800) : [];
       let added = 0, updated = 0, skipped = 0;
       for (const row of rows) {
-        const cls = Number(row.cls), num = Number(row.num);
-        if (!(cls >= 1 && cls <= 20) || !(num >= 1 && num <= 50)) { skipped++; continue; }
+        const cls = row.cls === "" || row.cls === null || row.cls === undefined ? NaN : Number(row.cls), num = Number(row.num);
+        if (!(cls >= 0 && cls <= 20) || !(num >= 1 && num <= 50)) { skipped++; continue; }
         const key = `${cls}-${num}`, name = String(row.name ?? "").trim().slice(0, 20), birth = String(row.birth ?? "").trim();
         const cur = roster[key];
         if (!cur && !name) { skipped++; continue; }
@@ -198,7 +202,7 @@ async function handle(body, store) {
     if (action === "adminSetTeacher") {
       const cls = Number(body.cls), name = String(body.name || "").trim().slice(0, 20);
       let pass = String(body.pass || "");
-      if (!(cls >= 1 && cls <= 20)) throw new Http("반을 확인하세요.");
+      if (!(cls >= 0 && cls <= 20)) throw new Http("반을 확인하세요.");
       if (body.remove) { await store.delete("t/" + cls); return {}; }
       const cur = await store.get("t/" + cls, { type: "json" });
       if (!name) throw new Http("담임 이름을 적어 주세요.");

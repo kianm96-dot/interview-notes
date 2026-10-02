@@ -419,9 +419,11 @@ function mergeData(layer) {
   }).sort((x, y) => (x.custom ? 1 : 0) - (y.custom ? 1 : 0));
   const c = (layer && layer.common) || CFG.common;
   if (c) { d.common = c.common || d.common; d.commonTips = c.commonTips || d.commonTips; }
+  // 반 목록: 기본 반 + 명단에 실제로 있는 반
+  d.classes = [...new Set([...BASE.classes, ...(CFG.rosterClasses || []), ...EXTRA_CLASSES].map(Number).filter((n) => n >= 0 && n <= 20))].sort((a, b) => a - b);
   return d;
 }
-let VD = null; const DCACHE = {};
+let VD = null; const DCACHE = {}, EXTRA_CLASSES = new Set();
 function buildData() { D = mergeData(CFG.cls); VD = null; Object.keys(DCACHE).forEach((k) => delete DCACHE[k]); }
 // 관리자가 학년 전체를 볼 때는 학생의 반에 맞는 질문으로 바꿔 본다
 function dataFor(cls) { if (!CFG.classes) return D; return (DCACHE[cls] = DCACHE[cls] || mergeData(CFG.classes[cls])); }
@@ -440,7 +442,7 @@ function groupByArea(qs) {
 /* =====================================================================
    저장소: 서버(Netlify 함수) 또는 미리보기(이 브라우저)
    ===================================================================== */
-const NEED_SERVER = 9; // 이 화면이 필요로 하는 서버 파일(interview.mjs) 번호
+const NEED_SERVER = 12; // 이 화면이 필요로 하는 서버 파일(interview.mjs) 번호
 const API = {
   mode: "server", stale: false,
   async probe() {
@@ -496,7 +498,7 @@ function demo(action, p) {
   const fail = (m) => { throw new Error(m); };
   db.gpa = db.gpa || {};
   db.cfg.classes = db.cfg.classes || {};
-  if (action === "getData") { const o = { schools: db.cfg.schools, common: db.cfg.common }; if (p.cls === "all") o.classes = db.cfg.classes; else if (Number(p.cls)) o.cls = db.cfg.classes[Number(p.cls)] || { schools: {}, common: null }; return { cfg: clone(o) }; }
+  if (action === "getData") { const o = { schools: db.cfg.schools, common: db.cfg.common }; if (p.cls === "all") o.classes = db.cfg.classes; else if (p.cls !== undefined && p.cls !== null && p.cls !== "") o.cls = db.cfg.classes[Number(p.cls)] || { schools: {}, common: null }; o.rosterClasses = [...new Set(Object.keys(db.roster).map((k) => Number(k.split("-")[0])))]; return { cfg: clone(o) }; }
   if (action === "rosterNames") { const names = {}; Object.keys(db.roster).forEach((k) => { const [c, n] = k.split("-").map(Number); if (c === Number(p.cls)) names[n] = db.roster[k].name; }); return { names }; }
 
   if (action.startsWith("student")) {
@@ -526,7 +528,7 @@ function demo(action, p) {
     if (action === "adminSaveRoster") {
       let added = 0, updated = 0, skipped = 0;
       p.rows.forEach((r) => { const k = `${Number(r.cls)}-${Number(r.num)}`, cur = db.roster[k], name = String(r.name ?? "").trim(), birth = String(r.birth ?? "").trim();
-        if (!(r.cls >= 1 && r.num >= 1) || (!cur && !name)) return skipped++;
+        if (!(r.cls >= 0 && r.num >= 1) || (!cur && !name)) return skipped++;
         db.roster[k] = { name: name || cur.name, birth: /^\d{6}$/.test(birth) ? birth : cur ? cur.birth : "" }; cur ? updated++ : added++;
         if (r.gpa !== undefined && r.gpa !== null) { const sc = String(r.gpa).trim(); if (sc) db.gpa[k] = { score: sc, note: "" }; else delete db.gpa[k]; } });
       save(); return { count: Object.keys(db.roster).length, added, updated, skipped };
@@ -1336,7 +1338,8 @@ async function copyText(t) {
   try { await navigator.clipboard.writeText(t); } catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch {} ta.remove(); }
   toast("주소를 복사했습니다.");
 }
-async function loadAdmin() { await checkShort(); A.data = await API.call("adminGet", { code: A.code }); A.data.students.sort((a, b) => a.cls - b.cls || a.num - b.num); }
+async function loadAdmin() { await checkShort(); A.data = await API.call("adminGet", { code: A.code });
+  A.data.students.forEach((x) => EXTRA_CLASSES.add(x.cls)); Object.keys(A.data.teachers).forEach((c) => EXTRA_CLASSES.add(Number(c))); buildData(); A.data.students.sort((a, b) => a.cls - b.cls || a.num - b.num); }
 const ROSTER_HEAD = ["학년", "반", "번호", "이름", "생년월일", "가내신"];
 function downloadSheet(rows, name) {
   if (window.XLSX) { const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet(rows); ws["!cols"] = [{ wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 10 }]; XLSX.utils.book_append_sheet(wb, ws, "명단"); return XLSX.writeFile(wb, name + ".xlsx"); }
@@ -1361,7 +1364,7 @@ function parseSheet(aoa) {
     if (col.id !== undefined && /^\d{5}$/.test(g("id"))) { cls = Number(g("id").slice(1, 3)); num = Number(g("id").slice(3)); }
     const name = g("name") || ""; let birth = (g("birth") || "").replace(/\D/g, ""); if (birth.length === 8) birth = birth.slice(2); if (birth.length === 5) birth = "0" + birth;
     const gpa = g("gpa"), key = `${cls}-${num}`, row = { cls, num };
-    if (!(cls >= 1 && cls <= 20 && num >= 1 && num <= 50) || (!name && !known.has(key)) || (birth && birth.length !== 6)) return out.bad.push(r.filter(Boolean).join(" "));
+    if (!(cls >= 0 && cls <= 20 && num >= 1 && num <= 50) || (!name && !known.has(key)) || (birth && birth.length !== 6)) return out.bad.push(r.filter(Boolean).join(" "));
     if (name) row.name = name; if (birth) row.birth = birth; if (gpa) row.gpa = gpa;
     if (!name && !birth && !gpa) return;
     out.rows.push(row); if (!known.has(key)) out.added++; else if (!name && !birth) out.gpaOnly++; else out.updated++;
@@ -1538,15 +1541,15 @@ app.addEventListener("click", async (e) => {
       if (act === "aTpl") return downloadSheet([ROSTER_HEAD, [D.grade, 1, 1, "홍길동", "110305", "230"]], "면접준비노트_명단양식");
       if (act === "aExport") return downloadSheet([ROSTER_HEAD, ...A.data.students.filter((x) => x.inRoster).map((x) => [D.grade, x.cls, x.num, x.name, x.birth, x.gpa?.score || ""])], "면접준비노트_명단");
       if (act === "aUpload") return $("#xlsFile").click();
-      if (act === "aAddRow") { const cls = A.cls === "all" ? "" : A.cls; const next = cls ? Math.max(0, ...A.data.students.filter((x) => x.cls == cls).map((x) => x.num), ...$$("#rosterTbl tr[data-new] [data-r=num]").map((i) => Number(i.value) || 0)) + 1 : "";
+      if (act === "aAddRow") { const cls = A.cls === "all" ? "" : String(A.cls); const next = cls !== "" ? Math.max(0, ...A.data.students.filter((x) => x.cls == cls).map((x) => x.num), ...$$("#rosterTbl tr[data-new] [data-r=num]").map((i) => Number(i.value) || 0)) + 1 : "";
         $("#rosterTbl tbody").insertAdjacentHTML("beforeend", `<tr data-new><td><input class="input" data-r="cls" value="${cls}" inputmode="numeric" aria-label="반"></td><td><input class="input" data-r="num" value="${next}" inputmode="numeric" aria-label="번호"></td><td><input class="input" data-r="name" placeholder="이름" aria-label="이름"></td><td><input class="input" data-r="birth" inputmode="numeric" maxlength="6" placeholder="110305" aria-label="생년월일"></td><td><input class="input" data-r="gpa" inputmode="decimal" aria-label="가내신"></td><td><span class="chip amber">저장 전</span></td><td style="text-align:right"><button class="btn sm danger" data-act="aDropRow" title="빼기">✕</button></td></tr>`);
-        const tr = $$("#rosterTbl tr[data-new]").pop(); tr.scrollIntoView({ block: "nearest" }); $(cls ? "[data-r=name]" : "[data-r=cls]", tr).focus(); return; }
+        const tr = $$("#rosterTbl tr[data-new]").pop(); tr.scrollIntoView({ block: "nearest" }); $(cls !== "" ? "[data-r=name]" : "[data-r=cls]", tr).focus(); return; }
       if (act === "aDropRow") return b.closest("tr").remove();
       if (act === "aRosterSave") {
         const v = (tr, k) => $(`[data-r="${k}"]`, tr).value.trim(), rows = [];
         for (const tr of $$("#rosterTbl tbody tr")) {
           const isNew = tr.hasAttribute("data-new"); let cls, num;
-          if (isNew) { cls = Number(v(tr, "cls")); num = Number(v(tr, "num")); if (!v(tr, "name") && !cls && !num) continue; if (!(cls >= 1 && num >= 1) || !v(tr, "name")) return toast("새 학생은 반, 번호, 이름을 모두 적어 주세요."); if (A.data.students.some((x) => x.key === `${cls}-${num}`)) return toast(`${cls}반 ${num}번은 이미 있습니다.`); }
+          if (isNew) { const cs = v(tr, "cls"); cls = Number(cs); num = Number(v(tr, "num")); if (!v(tr, "name") && !cs && !num) continue; if (cs === "" || !(cls >= 0 && cls <= 20 && num >= 1) || !v(tr, "name")) return toast("새 학생은 반(0~20), 번호, 이름을 모두 적어 주세요."); if (A.data.students.some((x) => x.key === `${cls}-${num}`)) return toast(`${cls}반 ${num}번은 이미 있습니다.`); }
           else [cls, num] = tr.dataset.key.split("-").map(Number);
           const birth = v(tr, "birth"); if (birth && !/^\d{6}$/.test(birth)) return toast(`${v(tr, "name")} 학생의 생년월일은 6자리 숫자로 적어 주세요.`);
           const cur = A.data.students.find((x) => x.key === `${cls}-${num}`);
