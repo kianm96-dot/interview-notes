@@ -460,7 +460,7 @@ const API = {
     try { r = await fetch("/api/interview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...payload }) }); }
     catch { throw new Error("인터넷 연결을 확인하고 다시 시도하세요."); }
     let j; try { j = await r.json(); } catch { throw new Error("서버 응답을 읽지 못했습니다. 잠시 뒤 다시 시도하세요."); }
-    if ((j.v || 0) < NEED_SERVER) this.stale = true;
+    if (j.ok || typeof j.v === "number") this.stale = (j.v || 0) < NEED_SERVER;
     if (!j.ok) throw new Error(j.message || "요청을 처리하지 못했습니다.");
     return j;
   }

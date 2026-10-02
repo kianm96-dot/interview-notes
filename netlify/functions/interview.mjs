@@ -4,7 +4,7 @@
 import { getStore } from "@netlify/blobs";
 import { createHash, randomBytes } from "node:crypto";
 
-const SERVER_VERSION = 9; // 화면(interview.html)과 짝이 맞는지 확인하는 번호
+const SERVER_VERSION = 10; // 화면(interview.html)과 짝이 맞는지 확인하는 번호
 const MAX_ANSWER = 3000;
 class Http extends Error { constructor(message, status = 400, extra = {}) { super(message); this.status = status; this.extra = extra; } }
 
@@ -322,12 +322,21 @@ export default async (req) => {
     if (raw.length > 400000) return json({ ok: false, message: "내용이 너무 깁니다." }, 413);
     body = JSON.parse(raw);
   } catch { return json({ ok: false, message: "요청 형식이 올바르지 않습니다." }, 400); }
-  try {
-    return json({ ok: true, v: SERVER_VERSION, ...(await handle(body, getStore({ name: "interview", consistency: "strong" }))) });
-  } catch (e) {
-    if (e instanceof Http) return json({ ok: false, message: e.message, ...e.extra }, e.status);
+  // 모든 응답(실패 포함)에 서버 파일 번호 v 를 붙인다
+  const run = async (opts) => json({ ok: true, v: SERVER_VERSION, ...(await handle(body, getStore(opts))) });
+  const failed = (e) => {
+    if (e instanceof Http) return json({ ok: false, v: SERVER_VERSION, message: e.message, ...e.extra }, e.status);
     console.error(e);
-    return json({ ok: false, message: "서버에서 문제가 생겼습니다. 잠시 뒤 다시 시도하세요." }, 500);
+    return json({ ok: false, v: SERVER_VERSION, message: "서버에서 문제가 생겼습니다. 잠시 뒤 다시 시도하세요." }, 500);
+  };
+  try {
+    // 저장 직후 바로 읽어도 방금 저장한 내용이 나오도록 '강한 일관성'으로 읽는다
+    return await run({ name: "interview", consistency: "strong" });
+  } catch (e) {
+    if (e instanceof Http) return failed(e);
+    // 이 환경에서 강한 일관성을 못 쓰면 기본 방식으로 한 번 더 시도한다
+    if (/consistency/i.test(String(e?.name) + String(e?.message))) { try { return await run("interview"); } catch (e2) { return failed(e2); } }
+    return failed(e);
   }
 };
 
