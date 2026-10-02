@@ -199,6 +199,8 @@ a.btn{text-decoration:none;color:var(--text)}
 .pair h4 .r{margin-left:auto;display:flex;gap:2px}
 .qhead{display:flex;gap:10px;align-items:flex-start;margin-bottom:12px}
 .qhead .qt{flex:1;margin:0}
+.q.blank{display:flex;align-items:center;gap:8px;padding:10px 16px;margin-bottom:8px;background:var(--surface2);box-shadow:none}
+.q.blank .qt{flex:1;margin:0;font-size:14.5px;font-weight:600;color:var(--sub)}
 .empty{padding:64px 20px;text-align:center;color:var(--sub);border-style:dashed;box-shadow:none}
 .toggle{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;cursor:pointer}
 .toggle input{appearance:none;width:36px;height:20px;border-radius:10px;background:var(--line);position:relative;transition:background .15s;cursor:pointer;margin:0}
@@ -284,6 +286,23 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px}
 .roster tr:last-child td{border-bottom:0}
 .roster .input{padding:7px 10px}
 .roster .w1{width:64px}.roster .w2{width:120px}
+#rosterTbl{width:auto}
+#rosterTbl th,#rosterTbl td{padding:5px 5px}
+#rosterTbl th:nth-child(1),#rosterTbl th:nth-child(2){width:58px}
+#rosterTbl th:nth-child(3){width:130px}
+#rosterTbl th:nth-child(4){width:108px}
+#rosterTbl th:nth-child(5){width:92px}
+#rosterTbl th:nth-child(6){width:150px;padding-left:12px}
+#rosterTbl td:nth-child(6){padding-left:12px}
+#rosterTbl th:nth-child(7){width:44px}
+/* 현황 표: 위 카드와 같은 너비, 모든 칸 가운데 정렬 */
+.tbl.mid th,.tbl.mid td{text-align:center;padding:8px 14px;white-space:nowrap}
+.duo{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:start}
+.duo .urls{padding:14px 16px}
+.duo .urls .u{gap:8px;padding:7px 0}
+.duo .urls .u b{width:48px;font-size:13.5px}
+.duo .urls .u code{padding:6px 9px;font-size:12.5px}
+@media (max-width:860px){.duo{grid-template-columns:1fr}}
 .roster .ro{background:var(--surface2);color:var(--sub)}
 .bad{color:var(--danger);font-weight:600}
 
@@ -912,7 +931,7 @@ function renderTeacher() {
   app.innerHTML = `${teacherNav()}<div class="wrap wide">${demoBanner()}
     <div class="stats">
       <div class="card stat"><b>${T.rows.length}</b><span>우리 반 학생</span></div>
-      <div class="card stat"><b>${T.rows.length - (counts.none || 0)}</b><span>들어온 학생</span></div>
+      <div class="card stat"><b>${T.rows.length - (counts.none || 0)}</b><span>로그인한 학생</span></div>
       <div class="card stat"><b>${counts.submitted || 0}</b><span>첨삭을 기다리는 제출</span></div>
       <div class="card stat"><b>${counts.released || 0}</b><span>첨삭을 돌려준 학생</span></div>
     </div>
@@ -936,8 +955,10 @@ function teacherMain() {
   if (!sids.length) return `<div class="card empty"><b>${esc(st.name)}</b> 학생은 아직 답변을 쓰지 않았습니다.<br><br><button class="btn sm" data-act="resetPin">비밀번호 초기화</button></div>`;
   if (!sids.includes(T.tab)) T.tab = sids.includes(st.school) ? st.school : sids[0];
   const sid = T.tab, ans = st.answers[sid], items = row.feedback.items[sid] || {}, extra = (row.feedback.extra || {})[sid] || [];
-  const all = studentQs(row, sid), qs = all.filter((q) => ans[q.id]);
-  const todo = qs.filter((q) => !items[q.id] || items[q.id].answer !== ans[q.id]).length;
+  // 학생이 보는 질문 전부(지원 학과 기준). 답하지 않은 질문도 함께 보여 준다.
+  const all = studentQs(row, sid).filter((q) => ans[q.id] || !q.dept || !st.dept || q.dept === st.dept), answered = all.filter((q) => ans[q.id]);
+  const qs = T.onlyDone ? answered : all;
+  const todo = answered.filter((q) => !items[q.id] || items[q.id].answer !== ans[q.id]).length;
   return `<div class="thead"><h2>${row.num}번 ${esc(st.name)}</h2><span class="chip">${esc(st.dept || "학과 미선택")}</span>${row.gpa && row.gpa.score ? `<span class="chip" title="${esc(row.gpa.note || "")}">가내신 ${esc(row.gpa.score)}</span>` : ""}
       ${(st.submitted || {})[sid] ? `<span class="chip blue">제출 ${fmtTime(st.submitted[sid])}</span>` : `<span class="chip amber">아직 제출 전</span>`}
       <div class="sp"><label class="toggle"><input type="checkbox" id="release" ${row.feedback.released[sid] ? "checked" : ""}>학생에게 첨삭 보여 주기</label>
@@ -946,7 +967,10 @@ function teacherMain() {
     ${sids.length > 1 ? `<div class="seg" style="margin-bottom:12px">${sids.map((s) => `<button class="${s === sid ? "on" : ""}" data-act="tab" data-id="${s}">${esc(schoolLabel(st, s))}</button>`).join("")}</div>` : `<p style="font-weight:700;margin-bottom:12px">${esc(schoolLabel(st, sid))}</p>`}
     <div class="card pad" style="margin-bottom:12px"><label class="field" style="margin:0"><span>담임 한마디</span><textarea id="tnote" rows="2" placeholder="예: 지원동기에 과학 동아리 이야기를 넣은 게 참 좋았어. 면접 날 목소리만 조금 더 크게!">${esc(row.feedback.note[sid] || "")}</textarea></label>
       ${extra.length ? `<div style="margin-top:12px"><span class="small muted" style="font-weight:600">이 학생에게만 낸 질문</span>${extra.map((q) => `<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><span class="chip ${ans[q.id] ? "green" : ""}">${ans[q.id] ? "답함" : "아직"}</span><span style="flex:1">${esc(q.text)}</span><button class="btn ghost sm" data-act="dropExtra" data-id="${q.id}">지우기</button></div>`).join("")}</div>` : ""}</div>
-    ${qs.map((q) => { const item = items[q.id], stale = item && item.answer !== ans[q.id], busy = T.busy[q.id], clean = T.clean[q.id];
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap"><b>질문 ${all.length}개 중 ${answered.length}개 답함</b>${all.length - answered.length ? `<span class="chip amber">안 쓴 질문 ${all.length - answered.length}개</span>` : `<span class="chip green">모두 답함</span>`}
+      <div class="seg" style="margin-left:auto"><button class="${T.onlyDone ? "" : "on"}" data-act="onlyDone" data-v="">전체 질문</button><button class="${T.onlyDone ? "on" : ""}" data-act="onlyDone" data-v="1">답한 것만</button></div></div>
+    ${qs.map((q) => { if (!ans[q.id]) return `<div class="card q blank" data-q="${q.id}"><span class="chip">${esc(q.area)}</span>${q.dept ? `<span class="chip blue">${esc(q.dept)}</span>` : ""}<p class="qt">${esc(q.text)}</p><span class="chip amber">아직 답하지 않음</span></div>`;
+      const item = items[q.id], stale = item && item.answer !== ans[q.id], busy = T.busy[q.id], clean = T.clean[q.id];
       return `<div class="card q" data-q="${q.id}">
         <div class="qhead"><span class="chip">${esc(q.area)}</span><p class="qt">${esc(q.text)}</p>
           <button class="btn sm ${item && !stale ? "" : "primary"}" data-act="aiOne" ${busy ? "disabled" : ""}>${busy ? `<span class="spin"></span>첨삭하는 중` : item ? "AI로 다시 첨삭" : "AI 첨삭"}</button></div>
@@ -1262,10 +1286,10 @@ async function makeQuestions(item, cfg) {
 async function readYogang(files) {
   const cfg = aiCfg(); if (!cfg) { toast("먼저 AI 연결을 설정하세요."); return aiSettingsModal(); }
   for (const f of files) {
-    const item = { name: f.name, status: "reading" }; A.found.unshift(item); renderAdmin();
+    const item = { name: f.name, status: "reading", src: f }; A.found.unshift(item); renderAdmin();
     try {
       let file = null, extra = "";
-      if (/\.(hwp|hwpx|docx?)$/i.test(f.name)) throw new Error("한글·워드 파일은 읽을 수 없습니다. 한글에서 'PDF로 저장하기'를 한 뒤 PDF를 올려 주세요.");
+      if (/\.(hwp|hwpx|docx?)$/i.test(f.name)) { item.src = null; throw new Error("한글·워드 파일은 읽을 수 없습니다. 한글에서 'PDF로 저장하기'를 한 뒤 PDF를 올려 주세요."); }
       if (/\.txt$/i.test(f.name) || f.type.startsWith("text/")) extra = "\n\n요강 내용:\n" + (await f.text()).slice(0, 60000);
       else { if (f.size > 15e6) throw new Error("파일이 너무 큽니다(15MB까지)."); file = { mime: f.type || "application/pdf", b64: await fileB64(f), name: f.name }; }
       const j = parseJ(await aiChat(cfg, YO_SYSTEM, yoPrompt() + extra, file));
@@ -1358,12 +1382,13 @@ function renderAdmin() {
   const list = A.cls === "all" ? st : by(Number(A.cls));
   let body = "";
   if (A.tab === "status") body = `<div class="stats"><div class="card stat"><b>${st.filter((s) => s.inRoster).length}</b><span>명단에 있는 학생</span></div><div class="card stat"><b>${st.filter((s) => s.changed).length}</b><span>비밀번호를 만든 학생</span></div><div class="card stat"><b>${st.filter((s) => s.submitted).length}</b><span>답변을 제출한 학생</span></div><div class="card stat"><b>${st.filter((s) => s.released).length}</b><span>첨삭을 받은 학생</span></div></div>
-    <div class="card scroll"><table class="tbl"><tr><th>반</th><th class="r">명단</th><th class="r">들어옴</th><th class="r">제출</th><th class="r">첨삭 받음</th><th>담임</th></tr>
-    ${D.classes.map((c) => { const r = by(c); return `<tr><td><b>${c}반</b></td><td class="r">${r.length}</td><td class="r">${r.filter((s) => s.changed).length}</td><td class="r">${r.filter((s) => s.submitted).length}</td><td class="r">${r.filter((s) => s.released).length}</td><td>${A.data.teachers[c] ? `<b>${esc(A.data.teachers[c].name || "이름 없음")}</b>` : `<span class="chip amber">계정 없음</span>`}</td></tr>`; }).join("")}</table></div>
-    <p class="muted small" style="margin-top:12px">모든 반의 답변을 직접 보고 첨삭하려면 <a href="#teacher-all">학년 전체 보기</a>로 들어가세요. 관리자 코드로 로그인합니다.</p>
-    <div class="card pad urls" style="margin-top:16px"><h3 style="font-size:18px;font-weight:800;margin-bottom:4px">주소 안내</h3>
-      <p class="muted small" style="margin-bottom:8px">학생과 선생님께 안내할 주소입니다. 담임은 모두 같은 주소로 들어가고, 로그인하는 이름과 비밀번호에 따라 자기 반이 나옵니다.</p>
-      ${[["학생", ""], ["담임", "#teacher"], ["관리자", "#admin"]].map(([l, h]) => `<div class="u"><b>${l}</b><code>${esc(urlBase() + h)}</code><a class="btn sm pill" href="${esc(urlBase() + h)}" target="_blank" rel="noopener" data-act="aOpen">열기</a><button class="btn sm pill" data-act="aCopy" data-u="${esc(urlBase() + h)}">주소 복사</button></div>`).join("")}</div>`;
+    <div class="duo"><div class="card scroll"><table class="tbl mid"><tr><th>반</th><th>명단</th><th title="한 번 이상 로그인해서 자기 비밀번호를 만든 학생">로그인함</th><th>제출</th><th>첨삭 받음</th><th>담임</th></tr>
+    ${D.classes.map((c) => { const r = by(c); return `<tr><td><b>${c}반</b></td><td>${r.length}</td><td>${r.filter((s) => s.changed).length}</td><td>${r.filter((s) => s.submitted).length}</td><td>${r.filter((s) => s.released).length}</td><td>${A.data.teachers[c] ? `<b>${esc(A.data.teachers[c].name || "이름 없음")}</b>` : `<span class="chip amber">계정 없음</span>`}</td></tr>`; }).join("")}</table></div>
+      <div class="card urls"><h3 style="font-size:16px;font-weight:800;margin-bottom:2px">주소 안내</h3>
+      <p class="muted small" style="margin-bottom:4px">담임은 모두 같은 주소로 들어가 이름과 비밀번호로 자기 반을 엽니다.</p>
+      ${[["학생", ""], ["담임", "#teacher"], ["관리자", "#admin"]].map(([l, h]) => `<div class="u"><b>${l}</b><code title="${esc(urlBase() + h)}">${esc(urlBase() + h)}</code><a class="btn sm pill" href="${esc(urlBase() + h)}" target="_blank" rel="noopener" data-act="aOpen">열기</a><button class="btn sm pill" data-act="aCopy" data-u="${esc(urlBase() + h)}">복사</button></div>`).join("")}</div>
+    </div>
+    <p class="muted small" style="margin-top:12px">모든 반의 답변을 직접 보고 첨삭하려면 <a href="#teacher-all">학년 전체 보기</a>로 들어가세요. 관리자 코드로 로그인합니다.</p>`;
   if (A.tab === "students") {
     const noBirth = st.filter((x) => x.inRoster && !x.birth).length, clsN = new Set(st.map((x) => x.cls)).size;
     body = `<div class="card pad">
@@ -1373,7 +1398,7 @@ function renderAdmin() {
         <input type="file" id="xlsFile" accept=".xlsx,.xls,.csv" hidden></div>
       <p class="small muted" style="margin-bottom:10px">${clsN}개 반 ${st.length}명 · 비밀번호를 바꾼 학생 ${st.filter((x) => x.changed).length}명 · 가내신 입력 ${st.filter((x) => x.gpa && x.gpa.score).length}명${noBirth ? ` · <span class="bad">생년월일 없는 학생 ${noBirth}명</span>` : ""}</p>
       <div class="pills" style="margin-bottom:14px"><button class="${A.cls === "all" ? "on" : ""}" data-act="aCls" data-v="all">전체<span>${st.length}</span></button>${D.classes.map((c) => `<button class="${A.cls == c ? "on" : ""}" data-act="aCls" data-v="${c}">${D.grade}학년 ${c}반<span>${by(c).length}</span></button>`).join("")}</div>
-      <div style="overflow-x:auto"><table class="roster" id="rosterTbl"><thead><tr><th class="w1">반</th><th class="w1">번호</th><th>이름</th><th class="w2">생년월일</th><th class="w2">가내신</th><th>비밀번호</th><th></th></tr></thead><tbody>
+      <div style="overflow-x:auto"><table class="roster" id="rosterTbl" style="table-layout:fixed"><thead><tr><th class="w1">반</th><th class="w1">번호</th><th>이름</th><th class="w2">생년월일</th><th class="w2">가내신</th><th>비밀번호</th><th></th></tr></thead><tbody>
       ${list.map((x) => `<tr data-key="${x.key}"><td><input class="input ro" value="${x.cls}" readonly tabindex="-1" aria-label="반"></td><td><input class="input ro" value="${x.num}" readonly tabindex="-1" aria-label="번호"></td>
         <td><input class="input" data-r="name" value="${esc(x.name)}" aria-label="이름"></td><td><input class="input" data-r="birth" value="${esc(x.birth)}" inputmode="numeric" maxlength="6" placeholder="${x.inRoster && !x.birth ? "없음" : ""}" aria-label="생년월일"></td>
         <td><input class="input" data-r="gpa" value="${esc(x.gpa?.score || "")}" inputmode="decimal" aria-label="가내신"></td>
@@ -1392,7 +1417,7 @@ function renderAdmin() {
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn pill primary" data-act="aYoPick">요강 파일 올리기</button><input type="file" id="yoFile" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" multiple hidden>
         <button class="btn pill" data-act="aAi">${cfg ? `<span class="chip green" style="border:0;height:18px"><i></i>${AI_NAME[cfg.provider].split(" ").pop()}</span>` : `<span class="chip amber" style="border:0;height:18px">AI 연결 전</span>`} AI 연결 설정</button></div>
       ${A.found.map((it, i) => it.status === "reading" ? `<div class="found"><span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:8px"></span><b>${esc(it.name)}</b> ${it.step === "questions" ? "일정은 다 읽었고, 평가 영역을 따져 가며 예상 질문을 만드는 중입니다." : "요강을 읽는 중입니다."} 파일이 길면 1~2분쯤 걸릴 수 있어요.</div>`
-        : it.status === "error" ? `<div class="found" style="border-color:var(--danger);background:var(--danger-weak)"><b>${esc(it.name)}</b><p class="small" style="margin:4px 0 8px">${esc(it.err)}</p><button class="btn sm" data-act="aYoDrop" data-i="${i}">닫기</button></div>`
+        : it.status === "error" ? `<div class="found" style="border-color:var(--danger);background:var(--danger-weak)"><b>${esc(it.name)}</b><p class="small" style="margin:4px 0 8px">${esc(it.err)}</p>${it.src ? `<button class="btn sm primary" data-act="aYoAgain" data-i="${i}">이 요강 다시 읽기</button> ` : ""}<button class="btn sm" data-act="aYoDrop" data-i="${i}">닫기</button></div>`
         : `<div class="found" data-i="${i}"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><b style="font-size:15px">${esc(it.title || it.name)}</b><span class="muted small">올린 파일: ${esc(it.name)}</span>
             <label style="margin-left:auto;display:flex;gap:8px;align-items:center" class="small"><span class="muted">적용할 학교</span><select class="input" data-y="target" style="width:auto">${D.schools.filter((x) => !x.custom).map((x) => `<option value="${x.id}" ${it.target === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}<option value="new" ${it.target === "new" ? "selected" : ""}>새 학교로 추가</option></select></label></div>
           ${it.data.events.length ? SHEAD + it.data.events.map(srow).join("") : `<p class="small bad" style="margin-bottom:8px">요강에서 날짜를 찾지 못했습니다. 일정 추가로 직접 넣을 수 있습니다.</p>`}
@@ -1412,9 +1437,9 @@ function renderAdmin() {
     <div class="card pad sec"><h3 style="font-size:18px;font-weight:800;margin-bottom:4px">올린 요강 목록</h3>
       <p class="muted small" style="margin-bottom:10px">요강을 읽어 일정에 적용한 기록입니다. 같은 학교에 새 요강을 적용하면 기록이 새것으로 바뀝니다.</p>
       ${(() => { const ups = D.schools.filter((x) => x.yogang).sort((a, b) => b.yogang.at.localeCompare(a.yogang.at)), wait = A.found.filter((f) => f.status !== "error");
-        return ups.length || wait.length ? `<div style="overflow-x:auto"><table class="tbl"><tr><th>요강</th><th>올린 파일 이름</th><th>적용한 때</th><th>상태</th></tr>
-          ${wait.map((f) => `<tr><td><b>${esc(f.status === "reading" ? "읽는 중" : f.title || f.name)}</b></td><td class="muted small">${esc(f.name)}</td><td class="muted">아직</td><td><span class="chip amber">${f.status === "reading" ? "읽는 중" : "확인 후 적용 필요"}</span></td></tr>`).join("")}
-          ${ups.map((x) => `<tr><td><b>${esc(x.yogang.title || x.name + " 입시요강")}</b></td><td class="muted small">${esc(x.yogang.file)}</td><td>${fmtTime(x.yogang.at)}</td><td><span class="chip green">일정 ${x.yogang.count ?? eventsOf(x).length}개 적용</span></td></tr>`).join("")}</table></div>`
+        return ups.length || wait.length ? `<div style="overflow-x:auto"><table class="tbl"><tr><th>요강</th><th>올린 파일 이름</th><th>적용한 때</th><th>상태</th><th></th></tr>
+          ${wait.map((f) => `<tr><td><b>${esc(f.status === "reading" ? "읽는 중" : f.title || f.name)}</b></td><td class="muted small">${esc(f.name)}</td><td class="muted">아직</td><td><span class="chip amber">${f.status === "reading" ? "읽는 중" : "확인 후 적용 필요"}</span></td><td></td></tr>`).join("")}
+          ${ups.map((x) => `<tr><td><b>${esc(x.yogang.title || x.name + " 입시요강")}</b></td><td class="muted small">${esc(x.yogang.file)}</td><td>${fmtTime(x.yogang.at)}</td><td><span class="chip green">일정 ${x.yogang.count ?? eventsOf(x).length}개 적용</span></td><td class="r"><button class="btn sm danger" data-act="aYoDel" data-id="${x.id}" title="이 요강 삭제" aria-label="${esc(x.yogang.title || x.name)} 삭제">✕</button></td></tr>`).join("")}</table></div>`
           : `<p class="muted" style="padding:14px 0">아직 올린 요강이 없습니다.</p>`; })()}</div>
     <div class="card pad"><h3 style="font-size:18px;font-weight:800;margin-bottom:4px">학교별 일정</h3>
       <p class="muted small">학생 화면에는 지나간 일정을 건너뛰고 가장 가까운 다음 일정의 디데이가 나옵니다. 직접 고칠 수도 있습니다.</p>
@@ -1491,6 +1516,12 @@ app.addEventListener("click", async (e) => {
       if (act === "aAi") return aiSettingsModal();
       if (act === "aYoPick") { if (!aiCfg()) { toast("먼저 AI 연결을 설정하세요."); return aiSettingsModal(); } return $("#yoFile").click(); }
       if (act === "aYoDrop") A.found.splice(Number(b.dataset.i), 1);
+      if (act === "aYoDel") {
+        const sc = schoolById(b.dataset.id), pick = await new Promise((res) => { const m = modal(`<h2>올린 요강 삭제</h2><p class="desc">${esc(sc.yogang.title || sc.name)}<br>목록에서 이 요강을 지웁니다. 이 요강에서 읽어 온 ${esc(sc.name)}의 일정도 함께 지울까요? 이미 추가된 예상 질문과 꿀팁은 지워지지 않으니, 필요하면 '질문·꿀팁 관리'에서 지워 주세요.</p>
+          <div class="acts"><button class="btn" data-x="">취소</button><button class="btn" data-x="rec">목록에서만 지우기</button><button class="btn danger" data-x="all">일정까지 지우기</button></div>`); m.addEventListener("click", (e) => { const x = e.target.closest("[data-x]"); if (x) { m.remove(); res(x.dataset.x); } }); });
+        if (!pick) return;
+        await saveSchedule(sc.id, pick === "all" ? { yogang: undefined, schedule: [] } : { yogang: undefined, schedule: sc.schedule || [] }); toast(pick === "all" ? "요강과 일정을 지웠습니다." : "목록에서 지웠습니다. 일정은 그대로입니다."); }
+      if (act === "aYoAgain") { const [it] = A.found.splice(Number(b.dataset.i), 1); return readYogang([it.src]); }
       if (act === "aYoRetry") { const it = A.found[Number(b.dataset.i)], box = b.closest(".found"); it.data.events = readSrows(box); it.qBusy = true; renderAdmin(); await makeQuestions(it, aiCfg()); it.qBusy = false; if (!it.qErr) toast(`예상 질문 ${it.data.questions.length}개를 만들었습니다.`); }
       if (act === "aSchAdd") { const box = b.closest(".found, .schblock"); const cur = $$(".srow:not(.head)", box); if (cur.length) cur[cur.length - 1].insertAdjacentHTML("afterend", srow({})); else b.parentElement.insertAdjacentHTML("beforebegin", srow({})); const rows = $$(".srow:not(.head)", box); return $("[data-s=label]", rows[rows.length - 1]).focus(); }
       if (act === "aSchDel") return b.closest(".srow").remove();
@@ -1590,6 +1621,7 @@ app.addEventListener("click", async (e) => {
   if (act === "addExtra") return extraModal(row);
   if (act === "addFollow") return extraModal(row, b.dataset.text);
   if (act === "dropExtra") { row.feedback.extra[T.tab] = row.feedback.extra[T.tab].filter((q) => q.id !== b.dataset.id); await saveFeedback(row); return refreshMain(); }
+  if (act === "onlyDone") { T.onlyDone = !!b.dataset.v; return refreshMain(); }
   if (act === "toggleClean") { T.clean[qid] = !T.clean[qid]; return refreshMain(); }
   if (act === "copy") { const it = itemOf(row, qid); try { await navigator.clipboard.writeText(revisedText(it.answer, it.edits)); toast("수정본을 복사했습니다."); } catch { toast("복사하지 못했습니다."); } return; }
   if (act === "manual") return manualModal(row, qid);
