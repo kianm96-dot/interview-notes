@@ -207,7 +207,9 @@ a.btn{text-decoration:none;color:var(--text)}
 .toggle input:checked::after{transform:translateX(16px)}
 
 /* 질문 관리 */
-.bank{display:grid;grid-template-columns:240px 1fr;gap:20px;align-items:start}
+.bank{display:grid;grid-template-columns:264px minmax(0,1fr);gap:20px;align-items:start}
+.bank .menu button>span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bank .menu .chip{flex:none}
 .bank .menu{position:sticky;top:78px;padding:6px}
 .bank .menu button{display:flex;justify-content:space-between;align-items:center;gap:6px;width:100%;text-align:left;border:0;background:none;padding:9px 10px;border-radius:9px;font-weight:600}
 .bank .menu button:hover{background:var(--surface2)}
@@ -329,7 +331,7 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const app = $("#app");
-const LOGO = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.6A8 8 0 1 1 21 12z"/><path d="M9 12l2 2 4-4"/></svg>`;
+const LOGO = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>`;
 const mem = {};
 const store = (kind) => ({
   get(k) { try { return window[kind].getItem(k); } catch { return mem[kind + k] ?? null; } },
@@ -345,6 +347,12 @@ const fmtTime = (iso) => { if (!iso) return ""; const d = new Date(iso); return 
 const lines = (t) => String(t || "").split("\n").map((x) => x.trim()).filter(Boolean);
 const uid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
+// 브라우저 탭 이름을 화면마다 다르게, 아이콘은 메모 쓰는 연필(📝)
+function setTab(suffix) {
+  document.title = "면접 준비 노트" + (suffix || "");
+  let l = document.querySelector('link[rel="icon"]'); if (!l) { l = document.createElement("link"); l.rel = "icon"; document.head.appendChild(l); }
+  l.href = "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📝</text></svg>`);
+}
 function toast(msg) {
   $$(".toast").forEach((t) => t.remove());
   const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = msg;
@@ -357,12 +365,15 @@ function modal(html, wide) {
   document.body.appendChild(m); const f = $("input,textarea,select,button", m); if (f) f.focus();
   return m;
 }
+// 서버에 다녀오는 동안 버튼에 '저장하는 중'을 보여 준다
+function busy(btn, label = "저장하는 중") { if (!btn) return; btn.disabled = true; btn.innerHTML = `<span class="spin"></span>${label}`; }
 function onSubmit(sel, fn) {
   const el = $(sel), errEl = $(".err", el);
   const run = () => {
     const empty = $$("[required]", el).find((i) => !i.value.trim());
     if (empty) { if (errEl) errEl.textContent = "빈칸을 채워 주세요."; return empty.focus(); }
-    fn({ get: (n) => $(`[name="${n}"]`, el).value });
+    const vals = {}; $$("[name]", el).forEach((i) => (vals[i.name] = i.value));
+    busy($("button.primary", el), "확인하는 중"); fn({ get: (n) => vals[n] });
   };
   $("button.primary", el).onclick = run;
   el.onkeydown = (e) => { if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); run(); } };
@@ -410,8 +421,9 @@ function groupByArea(qs) {
 /* =====================================================================
    저장소: 서버(Netlify 함수) 또는 미리보기(이 브라우저)
    ===================================================================== */
+const NEED_SERVER = 9; // 이 화면이 필요로 하는 서버 파일(interview.mjs) 번호
 const API = {
-  mode: "server",
+  mode: "server", stale: false,
   async probe() {
     if (window.IV_FORCE_DEMO || location.protocol === "file:") { this.mode = "demo"; }
     else {
@@ -429,12 +441,13 @@ const API = {
     try { r = await fetch("/api/interview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...payload }) }); }
     catch { throw new Error("인터넷 연결을 확인하고 다시 시도하세요."); }
     let j; try { j = await r.json(); } catch { throw new Error("서버 응답을 읽지 못했습니다. 잠시 뒤 다시 시도하세요."); }
+    if ((j.v || 0) < NEED_SERVER) this.stale = true;
     if (!j.ok) throw new Error(j.message || "요청을 처리하지 못했습니다.");
     return j;
   }
 };
 const DEMO_HINT = { student: "<code>1반 1번</code> 첫 비밀번호 <code>110101</code> (처음 로그인 체험), <code>1반 2번</code> 비밀번호 <code>1234</code> (첨삭 받은 학생)", teacher: "담임 이름 <code>김담임</code> 비밀번호 <code>1234</code> (1반 담임. 다른 반은 관리자 화면에서 만든 뒤)", admin: "관리자 코드 <code>admin</code>" };
-const demoBanner = (who) => API.mode !== "demo" ? "" :
+const demoBanner = (who) => API.mode !== "demo" ? (API.stale && /^#(admin|teacher)/.test(ROUTE) ? `<div class="banner" style="background:var(--danger-weak);color:var(--danger)"><b>서버 파일이 예전 것입니다.</b> 저장이 제대로 되지 않을 수 있습니다. GitHub 저장소의 <code>netlify/functions/interview.mjs</code>를 최신 파일로 바꿔 올린 뒤 새로 고침해 주세요.</div>` : "") :
   `<div class="banner"><b>미리보기 모드</b> 저장 서버 없이 이 브라우저 안에서만 동작합니다. ${who ? "체험용 계정: " + DEMO_HINT[who] : ""}</div>`;
 
 function demoSeed() {
@@ -625,6 +638,7 @@ function feedbackHTML(item, edit) {
 const S = { me: null, pin: "", feedback: null, view: "schools", info: "format", saveState: "", timer: null };
 
 function studentLoginView(err = "") {
+  setTab("");
   const DEMO = API.mode === "demo";
   const saved = getJ(SS, "iv-student");
   app.innerHTML = `<div class="auth"><div class="box">${demoBanner("student")}
@@ -716,7 +730,7 @@ function progressOf(sid) {
   return { done: qs.filter((q) => (ans[q.id] || "").trim()).length, total: qs.length };
 }
 function renderStudent() {
-  VD = null;
+  VD = null; if (S.me) setTab(`(${S.me.name})`);
   if (!S.me) return studentLoginView();
   if (S.view === "work" && schoolById(S.me.school)) return renderWork();
   app.innerHTML = `${studentNav()}<div class="wrap">${demoBanner()}
@@ -822,13 +836,14 @@ const T = { auth: null, who: null, rows: [], sel: null, tab: null, view: "review
 const AI_DEFAULT = { gemini: "gemini-2.5-flash", openai: "gpt-4o-mini", claude: "claude-haiku-4-5-20251001" };
 const AI_NAME = { gemini: "Google Gemini", openai: "OpenAI (ChatGPT)", claude: "Anthropic Claude" };
 const inAdmin = () => ROUTE === "#admin";
-const aiKeyName = () => "iv-ai-" + (inAdmin() ? "admin" : T.auth ? T.auth.cls : "x");
+const aiKeyName = () => "iv-ai-" + (inAdmin() || (T.auth && T.auth.cls === "all") ? "admin" : T.auth ? T.auth.cls : "x");
 const aiWho = () => (inAdmin() ? "관리자" : T.who.label);
 const rerender = () => (inAdmin() ? renderAdmin() : renderTeacher());
 const aiCfg = () => getJ(LS, aiKeyName());
 
 const tKey = (cls) => (cls === "all" ? "iv-teacher-all" : "iv-teacher");
 function teacherLoginView(cls, err = "") {
+  setTab(cls === "all" ? " 관리자 전체 보기" : " 담임");
   const DEMO = API.mode === "demo";
   const all = cls === "all";
   app.innerHTML = `<div class="auth"><div class="box">${demoBanner(all ? "admin" : "teacher")}<div class="card" id="tLogin">
@@ -889,6 +904,7 @@ function teacherNav() {
       <button class="btn sm" data-act="tLogout">나가기</button></div></div></header>`;
 }
 function renderTeacher() {
+  setTab(isAll() ? ` 관리자 ${T.view === "bank" ? "질문 관리" : "전체 보기"}` : ` 담임(${T.who.scope}반${T.who.name ? " " + T.who.name : ""})`);
   if (T.view === "bank") return renderBank();
   const counts = { all: T.rows.length }; T.rows.forEach((r) => { const s = rowState(r); counts[s] = (counts[s] || 0) + 1; });
   const list = T.rows.filter((r) => (T.filter === "all" || rowState(r) === T.filter || (T.filter === "todo" && rowState(r) === "submitted")) && (!T.search || (r.name || "").includes(T.search) || String(r.num) === T.search));
@@ -1027,9 +1043,9 @@ function renderBank() {
   app.innerHTML = `${teacherNav()}<div class="wrap wide">${demoBanner()}
     <datalist id="areas">${areas.map((a) => `<option value="${esc(a)}">`).join("")}</datalist>
     <div class="bank">
-      <aside class="card menu">${D.schools.map((s) => `<button class="${s.id === b.id ? "on" : ""}" data-act="bankOpen" data-id="${s.id}"><span>${esc(s.name)}</span>${s.hidden ? `<span class="chip">숨김</span>` : L.schools[s.id] ? `<span class="chip blue">${mark}</span>` : ""}</button>`).join("")}
+      <aside class="card menu">${D.schools.map((s) => `<button class="${s.id === b.id ? "on" : ""}" data-act="bankOpen" data-id="${s.id}" title="${esc(s.name)}"><span>${esc(s.name)}</span>${s.hidden ? `<span class="chip">숨김</span>` : L.schools[s.id] ? `<span class="chip blue" title="${mark}">수정</span>` : ""}</button>`).join("")}
         ${b.isNew ? `<button class="on"><span>${esc(d.name || "새 학교")}</span><span class="chip amber">저장 전</span></button>` : ""}
-        <hr><button class="${isCommon ? "on" : ""}" data-act="bankOpen" data-id="common"><span>공통 질문과 요령</span>${L.common ? `<span class="chip blue">${mark}</span>` : ""}</button>
+        <hr><button class="${isCommon ? "on" : ""}" data-act="bankOpen" data-id="common"><span>공통 질문과 요령</span>${L.common ? `<span class="chip blue" title="${mark}">수정</span>` : ""}</button>
         <hr><button data-act="bankNew"><span>+ 학교 추가</span></button></aside>
       <div id="bankForm"><div class="thead"><h2>${isCommon ? "공통 질문과 요령" : esc(d.name || "새 학교")}</h2><span class="muted small">${over ? `${mark} ${esc(over.updatedBy || "")} ${fmtTime(over.updatedAt)}` : all ? "기본 내용 그대로" : "학년 공통 내용 그대로"}</span>
           ${over ? `<div class="sp"><button class="btn sm ${isBase || isCommon ? "" : "danger"}" data-act="bankReset">${isBase || isCommon ? (all ? "기본 내용으로 되돌리기" : "학년 공통 내용으로 되돌리기") : "이 학교 삭제"}</button></div>` : ""}</div>
@@ -1182,6 +1198,34 @@ const YO_SYSTEM = `당신은 한국 고등학교 입학전형 요강에서 일�
 const yoPrompt = () => `오늘은 ${new Date().toISOString().slice(0, 10)}입니다. 주어진 입학전형 요강에서 아래 내용을 뽑아 JSON으로 답하세요.
 {"school":"학교 정식 이름","year":"몇 학년도 입학전형인지 숫자 4자리, 예: 2027","events":[{"label":"일정 이름","date":"YYYY-MM-DD","end":"기간이면 마지막 날 YYYY-MM-DD, 아니면 빈칸","time":"시각이 있으면 예: 13:00, 없으면 빈칸"}],"depts":["모집 학과 이름"],"format":["면접(2차 전형) 방식과 배점을 설명하는 짧은 문장, 최대 5개"],"rubric":[{"area":"면접 평가 영역","points":"배점 숫자 또는 빈칸","elements":"평가 요소"}]}
 events에는 원서접수, 1차 합격자 발표, 면접(및 신체검사), 최종 합격자 발표처럼 지원자가 챙겨야 할 일정을 날짜 순서로 넣습니다. 일반전형과 특별전형 일정이 같으면 한 번만 넣습니다. 면접이 들어간 일정의 label에는 반드시 '면접'이라는 낱말을 넣습니다.`;
+// 2단계: 읽어 온 평가 영역을 놓고 차근차근 따져 가며 예상 질문을 만든다
+const Q_SYSTEM = `당신은 특성화고·마이스터고 입학 면접을 여러 해 지도한 중학교 3학년 진학 담당 교사입니다.
+입학전형 요강을 근거로, 그 학교 면접에서 실제로 나올 법한 예상 질문을 만듭니다. 아래 순서를 건너뛰지 말고 차례로 생각한 뒤 답합니다.
+
+생각하는 순서
+1. 평가 영역과 평가 요소를 하나씩 놓고, 면접관이 그 요소로 지원자의 무엇을 확인하려는지 한 문장으로 정리한다.
+2. 요소마다 그것이 가장 잘 드러나는 질문 형태를 고른다. 경험을 묻는 질문, 상황을 주고 어떻게 할지 묻는 질문, 학과 기초 이해를 확인하는 질문, 가치 판단을 묻는 질문을 섞는다. 한 가지 형태로만 채우지 않는다.
+3. 이 학교만의 조건(기숙사, 지필평가, 발표 시간 제한, 여러 학과 지망, 집단 면접 등)이 요강에 있으면 그 조건에서 나오는 질문을 넣는다.
+4. 모집 학과가 여럿이면 특정 학과 지원자에게만 물을 질문도 넣고 dept에 그 학과 이름을 적는다. 모든 학과에 해당하면 dept는 빈칸.
+5. 질문마다 중학교 3학년이 자기 경험과 중학교 교과 수준으로 답할 수 있는지 따져 본다. 전문 지식이 있어야 답할 수 있는 질문, 너무 막연한 질문("자신에 대해 말해 보세요"), 예·아니요로 끝나는 질문은 고쳐 쓰거나 버린다.
+6. 뜻이 겹치는 질문과 '이미 있는 질문'에 있는 것과 같은 질문은 뺀다.
+7. 마지막으로 전체를 다시 읽고, 평가 영역마다 최소 2개씩 있는지, 배점이 큰 영역에 질문이 더 많은지 확인한다.
+
+hint(답변 요령)는 "구체적으로 답하세요" 같은 뻔한 말이 아니라, 그 질문에서 무엇을 먼저 말하고 어떤 경험이나 내용을 넣으면 평가 요소를 채울 수 있는지 학생이 따라 할 수 있게 한 문장으로 쓴다.
+tips는 요강에 적힌 면접 방식, 배점, 유의 사항에서 직접 나오는 준비 요령만 쓴다. 요강에 근거가 없으면 쓰지 않는다.
+질문은 면접관이 실제로 말하는 것처럼 '~해 보세요', '~인가요?' 말투로 쓴다. 기출인 것처럼 꾸미지 않는다.
+
+반드시 아래 JSON 한 개만 출력한다. analysis를 먼저 채우고 그것을 바탕으로 questions를 쓴다.
+{"analysis":[{"area":"평가 영역","intent":"면접관이 확인하려는 것"}],"questions":[{"area":"평가 영역 이름","dept":"","text":"질문","hint":"답변 요령","why":"어떤 평가 요소를 보기 위한 질문인지"}],"tips":["준비 요령"]}`;
+function qPrompt(d, existing) {
+  const ex = D.schools.find((x) => x.id === "energy");
+  return [`학교: ${d.school || "(이름 못 읽음)"}`, d.depts.length ? `모집 학과: ${d.depts.join(", ")}` : "",
+    d.format.length ? `면접 방식:\n- ${d.format.join("\n- ")}` : "", d.rubric.length ? `면접 평가 영역:\n${d.rubric.map((r) => `- ${r.area}${r.points ? ` (${r.points}점)` : ""}: ${r.elements}`).join("\n")}` : "면접 평가 영역: 요강에서 찾지 못함. 자기소개, 지원분야이해, 미래설계계획, 인성 영역으로 만든다.",
+    existing.length ? `이미 있는 질문 (겹치지 않게):\n${existing.map((q) => "- " + q.text).join("\n")}` : "",
+    ex ? `잘 만든 질문과 답변 요령의 예 (형식과 수준 참고용, 그대로 베끼지 않는다):\n${ex.questions.filter((q) => q.hint).slice(0, 4).map((q) => `- [${q.area}] ${q.text} / 요령: ${q.hint}`).join("\n")}` : "",
+    "위 내용과 첨부한 요강을 근거로 예상 질문 10~14개와 준비 요령 3~5개를 만드세요."].filter(Boolean).join("\n\n");
+}
+const parseJ = (t) => { t = String(t).replace(/```json|```/g, ""); return JSON.parse(t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1)); };
 const fileB64 = (f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = () => rej(new Error("파일을 읽지 못했습니다.")); r.readAsDataURL(f); });
 const normName = (n) => String(n || "").replace(/\s|등학교|학교/g, "");
 function matchSchool(name) { const n = normName(name); if (!n) return "new"; const hit = D.schools.find((s) => !s.custom && (normName(s.name).includes(n) || n.includes(normName(s.name)))); return hit ? hit.id : "new"; }
@@ -1194,12 +1238,20 @@ async function readYogang(files) {
       if (/\.(hwp|hwpx|docx?)$/i.test(f.name)) throw new Error("한글·워드 파일은 읽을 수 없습니다. 한글에서 'PDF로 저장하기'를 한 뒤 PDF를 올려 주세요.");
       if (/\.txt$/i.test(f.name) || f.type.startsWith("text/")) extra = "\n\n요강 내용:\n" + (await f.text()).slice(0, 60000);
       else { if (f.size > 15e6) throw new Error("파일이 너무 큽니다(15MB까지)."); file = { mime: f.type || "application/pdf", b64: await fileB64(f), name: f.name }; }
-      const t = String(await aiChat(cfg, YO_SYSTEM, yoPrompt() + extra, file)).replace(/```json|```/g, ""), j = JSON.parse(t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1));
+      const j = parseJ(await aiChat(cfg, YO_SYSTEM, yoPrompt() + extra, file));
       const ok = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
       const yr = (String(j.year || "").match(/20\d{2}/) || [""])[0], sch = String(j.school || "").trim();
       item.title = sch ? `${yr ? yr + "학년도 " : ""}${sch} 입시요강` : f.name;
       item.data = { school: sch, events: (j.events || []).filter((e) => e && ok(e.date)).map((e) => ({ label: String(e.label || "일정"), date: e.date, end: ok(e.end) ? e.end : "", time: String(e.time || "") })),
-        depts: (j.depts || []).map(String).filter(Boolean), format: (j.format || []).map(String).filter(Boolean), rubric: (j.rubric || []).filter((r) => r && r.area).map((r) => ({ area: String(r.area), ...(Number(r.points) ? { points: Number(r.points) } : {}), elements: String(r.elements || "") })) };
+        depts: (j.depts || []).map(String).filter(Boolean), format: (j.format || []).map(String).filter(Boolean), rubric: (j.rubric || []).filter((r) => r && r.area).map((r) => ({ area: String(r.area), ...(Number(r.points) ? { points: Number(r.points) } : {}), elements: String(r.elements || "") })),
+        questions: [], tips: [], analysis: [] };
+      item.target = matchSchool(item.data.school); item.step = "questions"; renderAdmin();
+      try {
+        VD = null; const cur = schoolById(item.target), q = parseJ(await aiChat(cfg, Q_SYSTEM, qPrompt(item.data, cur ? questionsFor(cur, "") : []) + extra, file));
+        item.data.analysis = (q.analysis || []).filter((x) => x && x.area).map((x) => ({ area: String(x.area), intent: String(x.intent || "") }));
+        item.data.questions = (q.questions || []).filter((x) => x && x.text).slice(0, 16).map((x) => ({ area: String(x.area || "공통"), kind: "예상", text: String(x.text), ...(x.dept && item.data.depts.includes(String(x.dept)) ? { dept: String(x.dept) } : {}), ...(x.hint ? { hint: String(x.hint) } : {}), ...(x.why ? { why: String(x.why) } : {}) }));
+        item.data.tips = (q.tips || []).map(String).filter(Boolean).slice(0, 6);
+      } catch (er) { item.qErr = "일정은 읽었지만 예상 질문은 만들지 못했습니다. " + (/JSON|Unexpected/.test(er.message) ? "AI가 형식에 맞지 않는 답을 보냈습니다." : er.message); }
       item.target = matchSchool(item.data.school); item.status = "done";
     } catch (er) { item.status = "error"; item.err = /JSON|Unexpected/.test(er.message) ? "AI가 형식에 맞지 않는 답을 보냈습니다. 다시 올려 주세요." : er.message; }
     renderAdmin();
@@ -1217,6 +1269,7 @@ async function saveSchedule(id, patch) {
   CFG.schools[id] = { ...r.saved, id }; buildData();
 }
 function adminLoginView(err = "") {
+  setTab(" 관리자");
   const DEMO = API.mode === "demo";
   app.innerHTML = `<div class="auth"><div class="box">${demoBanner("admin")}<div class="card" id="aLogin">
     <div class="brand"><b>${LOGO}</b>면접 준비 노트</div><h1>관리자</h1><p class="lead">학생 명단과 비밀번호, 담임 계정을 관리합니다.</p>
@@ -1274,7 +1327,7 @@ async function uploadRoster(file) {
   try { await API.call("adminSaveRoster", { code: A.code, rows: r.rows }); await loadAdmin(); renderAdmin(); toast("명단에 반영했습니다."); } catch (er) { toast(er.message); }
 }
 function renderAdmin() {
-  VD = null;
+  VD = null; setTab(" 관리자");
   if (!A.code) { const c = SS.get("iv-admin"); if (c) { A.code = c; loadAdmin().then(renderAdmin).catch((e) => { A.code = ""; SS.del("iv-admin"); adminLoginView(e.message); }); return; } return adminLoginView(); }
   const st = A.data.students, by = (c) => st.filter((s) => s.cls === c);
   const list = A.cls === "all" ? st : by(Number(A.cls));
@@ -1310,10 +1363,10 @@ function renderAdmin() {
     const cfg = aiCfg();
     body = `<div class="card pad sec">
       <h3 style="font-size:18px;font-weight:800;margin-bottom:4px">입시요강 올리기</h3>
-      <p class="muted small" style="margin-bottom:14px">학교 입학전형 요강(PDF나 사진)을 올리면 AI가 원서접수, 1차 발표, 면접, 최종 발표 날짜를 읽어 옵니다. 확인하고 '적용'을 누르면 학생 화면의 디데이가 그 일정에 맞춰 자동으로 바뀝니다. 한글(hwp) 파일은 PDF로 저장해서 올려 주세요.</p>
+      <p class="muted small" style="margin-bottom:14px">학교 입학전형 요강(PDF나 사진)을 올리면 AI가 원서접수, 1차 발표, 면접, 최종 발표 날짜를 읽어 오고, 요강의 면접 평가 영역에 맞춘 예상 질문과 준비 요령도 만들어 줍니다. 확인하고 '적용'을 누르면 학생 화면의 디데이가 그 일정에 맞춰 자동으로 바뀝니다. 한글(hwp) 파일은 PDF로 저장해서 올려 주세요.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn pill primary" data-act="aYoPick">요강 파일 올리기</button><input type="file" id="yoFile" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" multiple hidden>
         <button class="btn pill" data-act="aAi">${cfg ? `<span class="chip green" style="border:0;height:18px"><i></i>${AI_NAME[cfg.provider].split(" ").pop()}</span>` : `<span class="chip amber" style="border:0;height:18px">AI 연결 전</span>`} AI 연결 설정</button></div>
-      ${A.found.map((it, i) => it.status === "reading" ? `<div class="found"><span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:8px"></span><b>${esc(it.name)}</b> 읽는 중입니다. 파일이 길면 1분쯤 걸릴 수 있어요.</div>`
+      ${A.found.map((it, i) => it.status === "reading" ? `<div class="found"><span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:8px"></span><b>${esc(it.name)}</b> ${it.step === "questions" ? "일정은 다 읽었고, 평가 영역을 따져 가며 예상 질문을 만드는 중입니다." : "요강을 읽는 중입니다."} 파일이 길면 1~2분쯤 걸릴 수 있어요.</div>`
         : it.status === "error" ? `<div class="found" style="border-color:var(--danger);background:var(--danger-weak)"><b>${esc(it.name)}</b><p class="small" style="margin:4px 0 8px">${esc(it.err)}</p><button class="btn sm" data-act="aYoDrop" data-i="${i}">닫기</button></div>`
         : `<div class="found" data-i="${i}"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><b style="font-size:15px">${esc(it.title || it.name)}</b><span class="muted small">올린 파일: ${esc(it.name)}</span>
             <label style="margin-left:auto;display:flex;gap:8px;align-items:center" class="small"><span class="muted">적용할 학교</span><select class="input" data-y="target" style="width:auto">${D.schools.filter((x) => !x.custom).map((x) => `<option value="${x.id}" ${it.target === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}<option value="new" ${it.target === "new" ? "selected" : ""}>새 학교로 추가</option></select></label></div>
@@ -1321,8 +1374,14 @@ function renderAdmin() {
           <div class="checks" style="margin:10px 0">
             ${it.data.depts.length ? `<label><input type="checkbox" data-y="depts"><span>학과도 바꾸기: ${esc(it.data.depts.join(", "))}</span></label>` : ""}
             ${it.data.format.length ? `<label><input type="checkbox" data-y="format"><span>면접 방식 ${it.data.format.length}줄도 바꾸기</span></label>` : ""}
-            ${it.data.rubric.length ? `<label><input type="checkbox" data-y="rubric"><span>채점 요소 ${it.data.rubric.length}개도 바꾸기: ${esc(it.data.rubric.map((r) => r.area).join(", "))}</span></label>` : ""}</div>
-          <p class="muted small" style="margin-bottom:10px">AI가 읽은 내용이라 틀릴 수 있습니다. 날짜를 요강과 꼭 대조해 주세요. 체크하지 않은 항목은 지금 내용을 그대로 둡니다.</p>
+            ${it.data.rubric.length ? `<label><input type="checkbox" data-y="rubric"><span>채점 요소 ${it.data.rubric.length}개도 바꾸기: ${esc(it.data.rubric.map((r) => r.area).join(", "))}</span></label>` : ""}
+            ${(it.data.questions || []).length ? `<label><input type="checkbox" data-y="questions" ${it.target === "new" || !(schoolById(it.target) || { questions: [] }).questions.length ? "checked" : ""}><span>AI가 만든 예상 질문 ${it.data.questions.length}개 추가하기</span></label>` : ""}
+            ${(it.data.tips || []).length ? `<label><input type="checkbox" data-y="tips" ${it.target === "new" || !(schoolById(it.target) || { tips: [] }).tips.length ? "checked" : ""}><span>준비 요령 ${it.data.tips.length}개를 꿀팁에 추가하기</span></label>` : ""}</div>
+          ${(it.data.questions || []).length ? `<details style="margin-bottom:10px"><summary class="small" style="cursor:pointer;font-weight:700">예상 질문과 준비 요령 미리 보기</summary>
+            ${(it.data.analysis || []).length ? `<p class="small" style="font-weight:700;margin-top:8px">AI가 본 평가 의도</p><ul class="small" style="margin:4px 0 0;padding-left:20px">${it.data.analysis.map((x) => `<li><b>${esc(x.area)}</b> ${esc(x.intent)}</li>`).join("")}</ul><p class="small" style="font-weight:700;margin-top:10px">예상 질문</p>` : ""}
+            <ol class="small" style="margin:4px 0 0;padding-left:20px">${it.data.questions.map((x) => `<li style="margin-bottom:6px"><span class="chip">${esc(x.area)}</span>${x.dept ? ` <span class="chip blue">${esc(x.dept)}</span>` : ""} ${esc(x.text)}${x.hint ? `<br><span class="muted">요령: ${esc(x.hint)}</span>` : ""}${x.why ? `<br><span class="muted">근거: ${esc(x.why)}</span>` : ""}</li>`).join("")}</ol>${(it.data.tips || []).length ? `<ul class="small" style="margin:8px 0 0;padding-left:20px">${it.data.tips.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</details>` : ""}
+          ${it.qErr ? `<p class="small bad" style="margin-bottom:8px">${esc(it.qErr)}</p>` : ""}
+          <p class="muted small" style="margin-bottom:10px">AI가 읽은 내용이라 틀릴 수 있습니다. 날짜를 요강과 꼭 대조해 주세요. 체크하지 않은 항목은 지금 내용을 그대로 둡니다. 예상 질문은 요강의 평가 영역을 보고 AI가 지어낸 것이며 기출이 아닙니다. 추가한 뒤 '질문·꿀팁 관리'에서 고칠 수 있습니다.</p>
           <div style="display:flex;gap:8px"><button class="btn sm" data-act="aSchAdd">일정 추가</button><button class="btn sm ghost" data-act="aYoDrop" data-i="${i}" style="margin-left:auto">버리기</button><button class="btn sm primary" data-act="aYoApply" data-i="${i}">적용</button></div></div>`).join("")}
     </div>
     <div class="card pad sec"><h3 style="font-size:18px;font-weight:800;margin-bottom:4px">올린 요강 목록</h3>
@@ -1401,7 +1460,7 @@ app.addEventListener("click", async (e) => {
   if (act === "aLogout") { A.code = ""; SS.del("iv-admin"); return adminLoginView(); }
   if (A.code && inAdmin() && /^a[A-Z]/.test(act)) {
     try {
-      if (act === "aReload") { await loadAdmin(); toast("새로 불러왔습니다."); }
+      if (act === "aReload") { busy(b, "불러오는 중"); await loadAdmin(); toast("새로 불러왔습니다."); }
       if (act === "aBank") { SS.set("iv-teacher-all", JSON.stringify({ cls: "all", pass: A.code })); T.auth = null; T.startView = "bank"; return go("#teacher-all"); }
       if (act === "aCopy") return copyText(b.dataset.u);
       if (act === "aAi") return aiSettingsModal();
@@ -1409,13 +1468,16 @@ app.addEventListener("click", async (e) => {
       if (act === "aYoDrop") A.found.splice(Number(b.dataset.i), 1);
       if (act === "aSchAdd") { const box = b.closest(".found, .schblock"); const cur = $$(".srow:not(.head)", box); if (cur.length) cur[cur.length - 1].insertAdjacentHTML("afterend", srow({})); else b.parentElement.insertAdjacentHTML("beforebegin", srow({})); const rows = $$(".srow:not(.head)", box); return $("[data-s=label]", rows[rows.length - 1]).focus(); }
       if (act === "aSchDel") return b.closest(".srow").remove();
-      if (act === "aSchSave") { const box = b.closest(".schblock"); await saveSchedule(box.dataset.id, { schedule: readSrows(box) }); toast("일정을 저장했습니다. 학생 화면 디데이에 바로 반영됩니다."); }
+      if (act === "aSchSave") { const box = b.closest(".schblock"), sch = readSrows(box); busy(b); await saveSchedule(box.dataset.id, { schedule: sch }); toast("일정을 저장했습니다. 학생 화면 디데이에 바로 반영됩니다."); }
       if (act === "aYoApply") { const box = b.closest(".found"), it = A.found[Number(b.dataset.i)], on = (k) => { const c = $(`[data-y="${k}"]`, box); return c && c.checked; };
         const isNew = it.target === "new", id = isNew ? uid("u") : it.target, patch = { schedule: readSrows(box) };
         patch.yogang = { title: it.title || it.name, file: it.name, at: new Date().toISOString(), count: patch.schedule.length };
         if (isNew) Object.assign(patch, { name: it.data.school || it.name.replace(/\.[^.]+$/, ""), depts: it.data.depts, format: it.data.format, rubric: it.data.rubric });
+        const cur = isNew ? { questions: [], tips: [] } : schoolById(id);
+        if (on("questions")) { const have = new Set(cur.questions.map((x) => x.text.replace(/\s/g, ""))); patch.questions = cur.questions.concat(it.data.questions.filter((x) => !have.has(x.text.replace(/\s/g, ""))).map(({ why, ...x }) => ({ id: uid(id + "-"), ...x }))); }
+        if (on("tips")) patch.tips = cur.tips.concat(it.data.tips.filter((x) => !cur.tips.includes(x)));
         if (on("depts")) patch.depts = it.data.depts; if (on("format")) patch.format = it.data.format; if (on("rubric")) patch.rubric = it.data.rubric;
-        await saveSchedule(id, patch); A.found.splice(Number(b.dataset.i), 1); toast(`${schoolById(id).name} 일정을 적용했습니다.`); }
+        busy(b, "적용하는 중"); await saveSchedule(id, patch); A.found.splice(Number(b.dataset.i), 1); toast(`${schoolById(id).name} 일정을 적용했습니다.`); }
       if (act === "aTpl") return downloadSheet([ROSTER_HEAD, [D.grade, 1, 1, "홍길동", "110305", "230"]], "면접준비노트_명단양식");
       if (act === "aExport") return downloadSheet([ROSTER_HEAD, ...A.data.students.filter((x) => x.inRoster).map((x) => [D.grade, x.cls, x.num, x.name, x.birth, x.gpa?.score || ""])], "면접준비노트_명단");
       if (act === "aUpload") return $("#xlsFile").click();
@@ -1435,7 +1497,7 @@ app.addEventListener("click", async (e) => {
           rows.push({ cls, num, name: v(tr, "name"), birth, gpa: v(tr, "gpa") });
         }
         if (!rows.length) return toast("고친 내용이 없습니다.");
-        await API.call("adminSaveRoster", { code: A.code, rows }); await loadAdmin(); toast(`${rows.length}명의 내용을 저장했습니다.`);
+        busy(b); await API.call("adminSaveRoster", { code: A.code, rows }); await loadAdmin(); toast(`${rows.length}명의 내용을 저장했습니다.`);
       }
       if (act === "aReset") { if (!(await ask("비밀번호 초기화", `${b.dataset.name} 학생의 비밀번호를 생년월일 6자리로 되돌립니다. 다음에 들어올 때 새 비밀번호를 다시 만들게 됩니다.`, "초기화"))) return; await API.call("adminResetStudent", { code: A.code, key: b.dataset.key }); await loadAdmin(); toast("생년월일로 초기화했습니다."); }
       if (act === "aRemove") { if (!(await ask("학생 삭제", `${b.dataset.name} 학생을 명단에서 빼고, 쓴 답변과 첨삭도 함께 지웁니다. 되돌릴 수 없습니다.`, "삭제", true))) return; await API.call("adminRemoveStudent", { code: A.code, key: b.dataset.key, withData: true }); await loadAdmin(); toast("삭제했습니다."); }
@@ -1448,7 +1510,8 @@ app.addEventListener("click", async (e) => {
         if (!todo.length) return toast("바뀐 내용이 없습니다.");
         const names = rows.filter((r) => r.name).map((r) => r.name.replace(/\s/g, "")), dup = names.find((n, i) => names.indexOf(n) !== i);
         if (dup && !(await ask("같은 이름이 있습니다", `'${dup}' 이름이 두 반에 있습니다. 이름이 같으면 비밀번호로 반을 구분하므로 두 반의 비밀번호를 서로 다르게 해 주세요.`, "그대로 저장"))) return;
-        let made = 0; for (const r of todo) { if (!A.data.teachers[r.cls] && !r.pass) made++; await API.call("adminSetTeacher", { code: A.code, cls: r.cls, name: r.name, pass: r.pass }); }
+        const made = todo.filter((r) => !A.data.teachers[r.cls] && !r.pass).length; busy(b);
+        await Promise.all(todo.map((r) => API.call("adminSetTeacher", { code: A.code, cls: r.cls, name: r.name, pass: r.pass })));
         await loadAdmin(); toast(`${todo.map((r) => r.cls + "반").join(", ")} 담임 계정을 저장했습니다.${made ? " 새 계정의 초기 비밀번호는 1234입니다." : ""}`); }
       if (act === "aDelT") { const cls = Number(b.closest("tr").dataset.cls); if (!(await ask("담임 계정 닫기", `${cls}반 담임 로그인을 막습니다. 다시 만들면 쓸 수 있습니다.`, "닫기", true))) return; await API.call("adminSetTeacher", { code: A.code, cls, remove: true }); await loadAdmin(); toast("계정을 닫았습니다."); }
     } catch (er) { toast(er.message); }
@@ -1480,7 +1543,7 @@ app.addEventListener("click", async (e) => {
     if (act === "bankSave") {
       if (!isC && !d.name) return toast("학교 이름을 적어 주세요.");
       arr.splice(0, arr.length, ...arr.filter((q) => q.text));
-      try { const { rev, updatedBy, updatedAt, ...data } = d;
+      try { const { rev, updatedBy, updatedAt, ...data } = d; busy(b);
         const r = await API.call(isC ? "teacherSaveCommon" : "teacherSaveSchool", { auth: T.auth, id: T.bank.id, data, rev: T.bank.rev });
         const L = myLayer(); if (isC) L.common = r.saved; else L.schools[T.bank.id] = { ...r.saved, id: T.bank.id };
         buildData(); openBank(T.bank.id); toast(isAll() ? "저장했습니다. 학년 공통으로 반영됩니다." : `저장했습니다. ${T.who.scope}반 학생 화면에 반영됩니다.`); } catch (er) { return toast(er.message); }

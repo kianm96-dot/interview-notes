@@ -4,6 +4,7 @@
 import { getStore } from "@netlify/blobs";
 import { createHash, randomBytes } from "node:crypto";
 
+const SERVER_VERSION = 9; // 화면(interview.html)과 짝이 맞는지 확인하는 번호
 const MAX_ANSWER = 3000;
 class Http extends Error { constructor(message, status = 400, extra = {}) { super(message); this.status = status; this.extra = extra; } }
 
@@ -322,7 +323,7 @@ export default async (req) => {
     body = JSON.parse(raw);
   } catch { return json({ ok: false, message: "요청 형식이 올바르지 않습니다." }, 400); }
   try {
-    return json({ ok: true, ...(await handle(body, getStore("interview"))) });
+    return json({ ok: true, v: SERVER_VERSION, ...(await handle(body, getStore({ name: "interview", consistency: "strong" }))) });
   } catch (e) {
     if (e instanceof Http) return json({ ok: false, message: e.message, ...e.extra }, e.status);
     console.error(e);
