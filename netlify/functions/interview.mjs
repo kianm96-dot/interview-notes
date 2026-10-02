@@ -59,7 +59,7 @@ async function teacherAuth(store, auth) {
   const t = await store.get("t/" + cls, { type: "json" });
   if (!t) throw new Http(`${cls}반 담임 비밀번호가 아직 없습니다. 관리자 페이지에서 먼저 만들어 주세요.`, 401);
   if (t.hash !== hash(String(auth.pass || ""), t.salt)) throw new Http("비밀번호가 맞지 않습니다.", 401);
-  return { scope: cls, label: `${cls}반 담임` };
+  return { scope: cls, name: t.name || "", label: `${cls}반 담임${t.name ? " " + t.name : ""}` };
 }
 const inScope = (who, key) => who.scope === "all" || key.startsWith(who.scope + "-");
 
@@ -168,7 +168,8 @@ async function handle(body, store) {
           submitted: m ? Object.keys(m.s.submitted || {}).length > 0 : false,
           released: m?.fb ? Object.values(m.fb.released || {}).some(Boolean) : false };
       });
-      const teachers = {}; tl.blobs.forEach((b) => (teachers[b.key.slice(2)] = true));
+      const teachers = {};
+      await Promise.all(tl.blobs.map(async (b) => { const t = await store.get(b.key, { type: "json" }); if (t) teachers[b.key.slice(2)] = { name: t.name || "" }; }));
       return { students, teachers };
     }
     // 명단 올리기·고치기: 있는 학생은 준 칸만 고치고, 없는 학생은 새로 넣는다.
@@ -192,12 +193,17 @@ async function handle(body, store) {
       await store.setJSON("gpa", gpa);
       return { count: Object.keys(roster).length, added, updated, skipped };
     }
+    // 담임 계정: 이름과 비밀번호. remove=true 면 계정을 닫는다. 비밀번호를 비우면 이름만 바꾼다.
     if (action === "adminSetTeacher") {
-      const cls = Number(body.cls), pass = String(body.pass || "");
+      const cls = Number(body.cls), name = String(body.name || "").trim().slice(0, 20);
+      let pass = String(body.pass || "");
       if (!(cls >= 1 && cls <= 20)) throw new Http("반을 확인하세요.");
-      if (!pass) { await store.delete("t/" + cls); return {}; }
-      if (pass.length < 4) throw new Http("비밀번호는 4자 이상이어야 합니다.");
-      await store.setJSON("t/" + cls, { ...newHash(pass), setAt: new Date().toISOString() });
+      if (body.remove) { await store.delete("t/" + cls); return {}; }
+      const cur = await store.get("t/" + cls, { type: "json" });
+      if (!name) throw new Http("담임 이름을 적어 주세요.");
+      if (!cur && !pass) pass = "1234"; // 처음 만들 때 비밀번호를 비우면 초기 비밀번호 1234
+      if (pass && pass.length < 4) throw new Http("비밀번호는 4자 이상이어야 합니다.");
+      await store.setJSON("t/" + cls, { ...(cur || {}), name, ...(pass ? newHash(pass) : {}), setAt: new Date().toISOString() });
       return {};
     }
     const key = String(body.key || "");
@@ -216,8 +222,22 @@ async function handle(body, store) {
   }
 
   /* ---------- 담임 로그인 (반마다 따로) ---------- */
+  // 담임 로그인: 이름과 비밀번호로 자기 반을 찾아 들어간다 (이름은 관리자가 정함)
   if (action === "teacherLogin") {
-    return { who: await teacherAuth(store, body.auth) };
+    if (body.name === undefined) return { who: await teacherAuth(store, body.auth) };
+    const name = String(body.name || "").replace(/\s/g, ""), pass = String(body.pass || "");
+    if (!adminCode()) throw new Http("Netlify 환경변수 TEACHER_CODE가 아직 설정되지 않았습니다.", 500);
+    if (!name) throw new Http("이름을 적어 주세요.");
+    if (name === "관리자") return { who: await teacherAuth(store, { cls: "all", pass }) };
+    const { blobs } = await store.list({ prefix: "t/" });
+    let found = false;
+    for (const b of blobs) {
+      const t = await store.get(b.key, { type: "json" });
+      if (!t || String(t.name || "").replace(/\s/g, "") !== name) continue;
+      found = true;
+      if (t.hash === hash(pass, t.salt)) { const cls = Number(b.key.slice(2)); return { who: { scope: cls, name: t.name, label: `${cls}반 담임 ${t.name}` } }; }
+    }
+    throw new Http(found ? "비밀번호가 맞지 않습니다." : "등록되지 않은 이름입니다. 관리자(학년 부장)에게 담임 계정을 만들어 달라고 하세요.", 401);
   }
 
   if (action && action.startsWith("teacher")) {
@@ -227,7 +247,8 @@ async function handle(body, store) {
       if (who.scope === "all") throw new Http("관리자 코드는 Netlify 환경변수에서 바꿉니다.");
       const np = String(body.newPass || "");
       if (np.length < 4) throw new Http("비밀번호는 4자 이상이어야 합니다.");
-      await store.setJSON("t/" + who.scope, { ...newHash(np), setAt: new Date().toISOString() });
+      const cur = (await store.get("t/" + who.scope, { type: "json" })) || {};
+      await store.setJSON("t/" + who.scope, { name: cur.name || "", ...newHash(np), setAt: new Date().toISOString() });
       return {};
     }
 

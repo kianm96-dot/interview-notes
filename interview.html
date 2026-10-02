@@ -31,6 +31,7 @@ a{color:var(--primary)}
 
 /* 공통 부품 */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 14px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);font-weight:600;font-size:14px;white-space:nowrap;transition:background .12s,border-color .12s}
+a.btn{text-decoration:none;color:var(--text)}
 .btn:hover{background:var(--surface2)}
 .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
 .btn.primary:hover{background:var(--primary-h);border-color:var(--primary-h)}
@@ -265,6 +266,10 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px}
 .schblock h4{font-size:15px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .found{border:1px solid var(--primary);border-radius:14px;padding:16px;margin-top:12px;background:var(--primary-weak)}
 .found .input{background:var(--surface)}
+.urls .u{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.urls .u:first-of-type{border-top:0}
+.urls .u b{flex:none;width:76px;font-size:14px}
+.urls .u code{flex:1;min-width:0;background:var(--surface2);border-radius:8px;padding:7px 10px;font-family:ui-monospace,Consolas,monospace;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pills{display:flex;gap:8px;flex-wrap:wrap}
 .pills button{height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-weight:700;font-size:13.5px}
 .pills button span{font-weight:500;color:var(--faint);margin-left:4px}
@@ -428,7 +433,7 @@ const API = {
     return j;
   }
 };
-const DEMO_HINT = { student: "<code>1반 1번</code> 첫 비밀번호 <code>110101</code> (처음 로그인 체험), <code>1반 2번</code> 비밀번호 <code>1234</code> (첨삭 받은 학생)", teacher: "<code>1반</code> 담임 비밀번호 <code>1234</code> (다른 반은 관리자 화면에서 비밀번호를 만든 뒤)", admin: "관리자 코드 <code>admin</code>" };
+const DEMO_HINT = { student: "<code>1반 1번</code> 첫 비밀번호 <code>110101</code> (처음 로그인 체험), <code>1반 2번</code> 비밀번호 <code>1234</code> (첨삭 받은 학생)", teacher: "담임 이름 <code>김담임</code> 비밀번호 <code>1234</code> (1반 담임. 다른 반은 관리자 화면에서 만든 뒤)", admin: "관리자 코드 <code>admin</code>" };
 const demoBanner = (who) => API.mode !== "demo" ? "" :
   `<div class="banner"><b>미리보기 모드</b> 저장 서버 없이 이 브라우저 안에서만 동작합니다. ${who ? "체험용 계정: " + DEMO_HINT[who] : ""}</div>`;
 
@@ -447,12 +452,12 @@ function demoSeed() {
       strengths: ["짧고 분명한 문장으로 말했습니다."], improve: ["학교 홈페이지에서 이차전지과 교육과정을 찾아 과목 이름을 넣기", "태양전지과와 무엇이 다른지 한 문장 넣기"],
       followups: ["전기 회로 실험에서 무엇이 가장 기억에 남았나요?"] } } } } },
     gpa: { "1-1": { score: "243.5", note: "" }, "1-2": { score: "228", note: "" } },
-    t: { "1": "1234" }, cfg: { schools: {}, common: null }
+    t: { "1": { name: "김담임", pass: "1234" } }, cfg: { schools: {}, common: null }
   };
 }
 function demo(action, p) {
-  let db = getJ(LS, "iv-demo5"); if (!db) db = demoSeed();
-  const save = () => LS.set("iv-demo5", JSON.stringify(db));
+  let db = getJ(LS, "iv-demo6"); if (!db) db = demoSeed();
+  const save = () => LS.set("iv-demo6", JSON.stringify(db));
   const emptyFb = () => ({ items: {}, note: {}, released: {}, extra: {} });
   const pub = (s) => { const { pin, ...rest } = s; return { ...rest, hasPin: !!pin }; };
   const forStu = (fb) => { const o = emptyFb(); if (!fb) return o; o.extra = fb.extra || {}; Object.keys(fb.released || {}).forEach((k) => { if (fb.released[k]) { o.released[k] = true; o.items[k] = (fb.items || {})[k] || {}; o.note[k] = (fb.note || {})[k] || ""; } }); return o; };
@@ -482,7 +487,7 @@ function demo(action, p) {
     if (p.code !== "admin") fail("관리자 코드가 맞지 않습니다.");
     if (action === "adminGet") {
       const keys = [...new Set([...Object.keys(db.roster), ...Object.keys(db.s)])];
-      return { teachers: Object.fromEntries(Object.keys(db.t).map((k) => [k, true])), students: keys.map((key) => { const [cls, num] = key.split("-").map(Number), s = db.s[key], fb = db.f[key];
+      return { teachers: Object.fromEntries(Object.keys(db.t).map((k) => [k, { name: db.t[k].name }])), students: keys.map((key) => { const [cls, num] = key.split("-").map(Number), s = db.s[key], fb = db.f[key];
         return { key, cls, num, name: db.roster[key]?.name || s?.name || "", inRoster: !!db.roster[key], birth: db.roster[key]?.birth || "", changed: !!s?.pin, gpa: db.gpa[key] || null, answered: s ? Object.values(s.answers || {}).reduce((n, a) => n + Object.keys(a).length, 0) : 0,
           submitted: s ? Object.keys(s.submitted || {}).length > 0 : false, released: fb ? Object.values(fb.released || {}).some(Boolean) : false }; }) };
     }
@@ -495,17 +500,25 @@ function demo(action, p) {
       save(); return { count: Object.keys(db.roster).length, added, updated, skipped };
     }
     if (action === "adminSaveGpa") { p.rows.forEach((r) => { const sc = String(r.score ?? "").trim(), nt = String(r.note ?? "").trim(); if (sc || nt) db.gpa[r.key] = { score: sc, note: nt }; else delete db.gpa[r.key]; }); save(); return { count: Object.keys(db.gpa).length }; }
-    if (action === "adminSetTeacher") { if (p.pass) { if (p.pass.length < 4) fail("비밀번호는 4자 이상이어야 합니다."); db.t[p.cls] = p.pass; } else delete db.t[p.cls]; save(); return {}; }
+    if (action === "adminSetTeacher") { const cur = db.t[p.cls], name = String(p.name || "").trim();
+      if (p.remove) { delete db.t[p.cls]; save(); return {}; }
+      if (!name) fail("담임 이름을 적어 주세요."); if (p.pass && p.pass.length < 4) fail("비밀번호는 4자 이상이어야 합니다.");
+      db.t[p.cls] = { name, pass: p.pass || (cur ? cur.pass : "1234") }; save(); return {}; }
     if (action === "adminResetStudent") { if (db.s[p.key]) delete db.s[p.key].pin; save(); return {}; }
     if (action === "adminRemoveStudent") { delete db.roster[p.key]; if (p.withData) { delete db.s[p.key]; delete db.f[p.key]; delete db.gpa[p.key]; } save(); return {}; }
   }
   if (action.startsWith("teacher")) {
-    const a = p.auth || {}; let who;
+    let a = p.auth || {}, who;
+    if (action === "teacherLogin" && p.name !== undefined) {
+      const nm = String(p.name).replace(/\s/g, ""); if (!nm) fail("이름을 적어 주세요.");
+      if (nm === "관리자") a = { cls: "all", pass: p.pass };
+      else { const hit = Object.keys(db.t).filter((k) => db.t[k].name.replace(/\s/g, "") === nm); if (!hit.length) fail("등록되지 않은 이름입니다. 관리자(학년 부장)에게 담임 계정을 만들어 달라고 하세요."); const k = hit.find((k) => db.t[k].pass === p.pass); if (!k) fail("비밀번호가 맞지 않습니다."); a = { cls: Number(k), pass: p.pass }; }
+    }
     if (a.cls === "all") { if (a.pass !== "admin") fail("관리자 코드가 맞지 않습니다."); who = { scope: "all", label: "관리자" }; }
-    else { const t = db.t[Number(a.cls)]; if (!t) fail(`${a.cls}반 담임 비밀번호가 아직 없습니다. 관리자 페이지에서 먼저 만들어 주세요.`); if (t !== a.pass) fail("비밀번호가 맞지 않습니다."); who = { scope: Number(a.cls), label: `${a.cls}반 담임` }; }
+    else { const t = db.t[Number(a.cls)]; if (!t) fail(`${a.cls}반 담임 계정이 없습니다. 관리자 페이지에서 먼저 만들어 주세요.`); if (t.pass !== a.pass) fail("비밀번호가 맞지 않습니다."); who = { scope: Number(a.cls), name: t.name, label: `${a.cls}반 담임 ${t.name}` }; }
     const inScope = (k) => who.scope === "all" || k.startsWith(who.scope + "-");
     if (action === "teacherLogin") return { who };
-    if (action === "teacherChangePass") { if (String(p.newPass).length < 4) fail("비밀번호는 4자 이상이어야 합니다."); db.t[who.scope] = p.newPass; save(); return {}; }
+    if (action === "teacherChangePass") { if (String(p.newPass).length < 4) fail("비밀번호는 4자 이상이어야 합니다."); db.t[who.scope].pass = p.newPass; save(); return {}; }
     if (action === "teacherList") {
       const map = {};
       Object.keys(db.s).filter(inScope).forEach((k) => (map[k] = { key: k, name: db.s[k].name, student: pub(db.s[k]), feedback: { ...emptyFb(), ...(db.f[k] || {}) } }));
@@ -628,7 +641,7 @@ function studentLoginView(err = "") {
     <p class="err" role="alert">${esc(err)}</p>
     <button class="btn primary lg block">들어가기</button>
   </div>
-  <div class="links"><a href="#teacher">담임 선생님</a><a href="#admin">관리자</a></div></div></div>`;
+  </div></div>`;
   const clsEl = $('#sLogin [name="cls"]'), numEl = $('#sLogin [name="num"]'), nameEl = $("#sName");
   let names = {};
   const showName = () => { nameEl.value = names[numEl.value] || ""; };
@@ -814,34 +827,34 @@ const aiWho = () => (inAdmin() ? "관리자" : T.who.label);
 const rerender = () => (inAdmin() ? renderAdmin() : renderTeacher());
 const aiCfg = () => getJ(LS, aiKeyName());
 
-function teacherPicker() {
-  app.innerHTML = `<div class="auth"><div class="box" style="max-width:440px">${demoBanner("teacher")}<div class="card">
-    <div class="brand"><b>${LOGO}</b>면접 준비 노트</div>
-    <h1>담임 선생님</h1><p class="lead">맡은 반을 고르세요. 반마다 로그인과 AI 연결이 따로 관리됩니다.</p>
-    <div class="tiles">${D.classes.map((c) => `<a href="#teacher-${c}">${c}반</a>`).join("")}</div>
-    <p class="muted small" style="margin-top:12px">반별 주소를 즐겨찾기에 넣어 두면 바로 들어올 수 있습니다. 예: <b>…/interview.html#teacher-3</b></p>
-  </div><div class="links"><a href="#">학생 페이지</a><a href="#admin">관리자</a></div></div></div>`;
-}
+const tKey = (cls) => (cls === "all" ? "iv-teacher-all" : "iv-teacher");
 function teacherLoginView(cls, err = "") {
   const DEMO = API.mode === "demo";
   const all = cls === "all";
   app.innerHTML = `<div class="auth"><div class="box">${demoBanner(all ? "admin" : "teacher")}<div class="card" id="tLogin">
     <div class="brand"><b>${LOGO}</b>면접 준비 노트</div>
-    <h1>${all ? `${D.grade}학년 전체 보기` : `${D.grade}학년 ${esc(cls)}반 담임`}</h1>
-    <p class="lead">${all ? "관리자 코드로 모든 반의 답변을 보고 첨삭합니다." : "우리 반 학생의 답변을 보고 첨삭해 돌려줍니다."}</p>
-    <label class="field"><span>${all ? "관리자 코드" : "담임 비밀번호"}</span><input name="pass" type="password" required autocomplete="current-password" value="${DEMO ? (all ? "admin" : cls == 1 ? "1234" : "") : ""}">${all ? "" : `<small>처음 비밀번호는 관리자(학년 부장)에게 받으세요. 들어온 뒤 바꿀 수 있습니다.</small>`}</label>
+    <h1>${all ? `${D.grade}학년 전체 보기` : "담임 선생님"}</h1>
+    <p class="lead">${all ? "관리자 코드로 모든 반의 답변을 보고 첨삭합니다." : "이름과 비밀번호를 넣으면 맡은 반 학생의 답변이 나옵니다."}</p>
+    ${all ? "" : `<label class="field"><span>담임 이름</span><input name="name" required autocomplete="username" value="${DEMO ? "김담임" : esc(LS.get("iv-tname") || "")}"></label>`}
+    <label class="field"><span>${all ? "관리자 코드" : "비밀번호"}</span><input name="pass" type="password" required autocomplete="current-password" value="${DEMO ? (all ? "admin" : "1234") : ""}">${all ? "" : `<small>이름은 관리자(학년 부장)가 등록해 줍니다. 처음 비밀번호는 1234이고, 들어온 뒤 바꿉니다.</small>`}</label>
     <p class="err" role="alert">${esc(err)}</p>
     <button class="btn primary lg block">들어가기</button>
-  </div><div class="links"><a href="#teacher">다른 반</a><a href="#">학생 페이지</a><a href="#admin">관리자</a></div></div></div>`;
+  </div><div class="links"><a href="#">학생 페이지</a><a href="#admin">관리자</a></div></div></div>`;
   onSubmit("#tLogin", async (f) => {
-    const auth = { cls: all ? "all" : Number(cls), pass: f.get("pass") };
-    try { await teacherEnter(auth); } catch (er) { teacherLoginView(cls, er.message); }
+    try {
+      if (all) return await teacherEnter({ cls: "all", pass: f.get("pass") });
+      const name = f.get("name").trim(), r = await API.call("teacherLogin", { name, pass: f.get("pass") });
+      LS.set("iv-tname", name);
+      await teacherEnter({ cls: r.who.scope, pass: f.get("pass") }, r.who);
+      if (r.who.scope !== "all" && f.get("pass") === "1234" && API.mode !== "demo") teacherPassModal(true);
+      if (r.who.scope === "all") go("#teacher-all");
+    } catch (er) { teacherLoginView(cls, er.message); }
   });
 }
-async function teacherEnter(auth) {
-  const r = await API.call("teacherLogin", { auth });
-  Object.assign(T, { auth, who: r.who, sel: null, tab: null, view: T.startView || "review", bank: null }); T.startView = null;
-  SS.set("iv-teacher-" + auth.cls, JSON.stringify(auth));
+async function teacherEnter(auth, who) {
+  if (!who) who = (await API.call("teacherLogin", { auth })).who;
+  Object.assign(T, { auth, who, sel: null, tab: null, view: T.startView || "review", bank: null }); T.startView = null;
+  SS.set(tKey(auth.cls), JSON.stringify(auth));
   await loadRows(); renderTeacher();
 }
 async function loadRows() {
@@ -968,12 +981,12 @@ function extraModal(row, text = "") {
   $("#ex", m).onclick = () => m.remove();
   $("#eo", m).onclick = async () => { const t = $("#e1", m).value.trim(); if (!t) return; const ex = (row.feedback.extra = row.feedback.extra || {}); (ex[T.tab] = ex[T.tab] || []).push({ id: uid("x-"), text: t, hint: $("#e2", m).value.trim() }); m.remove(); if (await saveFeedback(row)) toast("질문을 냈습니다."); refreshMain(); };
 }
-function teacherPassModal() {
-  const m = modal(`<h2>담임 비밀번호 바꾸기</h2><p class="desc">${esc(T.who.label)} 로그인에 쓰는 비밀번호입니다.</p>
+function teacherPassModal(first) {
+  const m = modal(`<h2>${first ? "비밀번호를 바꿔 주세요" : "담임 비밀번호 바꾸기"}</h2><p class="desc">${first ? "지금은 모든 담임이 같은 초기 비밀번호(1234)를 쓰고 있습니다. 학생 답변을 지키기 위해 본인만 아는 비밀번호로 바꿔 주세요." : esc(T.who.label) + " 로그인에 쓰는 비밀번호입니다."}</p>
     <label class="field"><span>새 비밀번호 (4자 이상)</span><input id="tp" type="password" autocomplete="new-password"></label><p class="err" id="tpe"></p>
     <div class="acts"><button class="btn" id="tx">취소</button><button class="btn primary" id="to">바꾸기</button></div>`);
   $("#tx", m).onclick = () => m.remove();
-  $("#to", m).onclick = async () => { const np = $("#tp", m).value; try { await API.call("teacherChangePass", { auth: T.auth, newPass: np }); T.auth.pass = np; SS.set("iv-teacher-" + T.auth.cls, JSON.stringify(T.auth)); m.remove(); toast("비밀번호를 바꿨습니다."); } catch (er) { $("#tpe", m).textContent = er.message; } };
+  $("#to", m).onclick = async () => { const np = $("#tp", m).value; try { await API.call("teacherChangePass", { auth: T.auth, newPass: np }); T.auth.pass = np; SS.set(tKey(T.auth.cls), JSON.stringify(T.auth)); m.remove(); toast("비밀번호를 바꿨습니다."); } catch (er) { $("#tpe", m).textContent = er.message; } };
 }
 
 /* ---------- 질문 관리 ---------- */
@@ -1207,7 +1220,16 @@ function adminLoginView(err = "") {
     <div class="links"><a href="#">학생 페이지</a><a href="#teacher">담임 선생님</a></div></div></div>`;
   onSubmit("#aLogin", async (f) => { A.code = f.get("code"); try { await loadAdmin(); SS.set("iv-admin", A.code); renderAdmin(); } catch (er) { A.code = ""; adminLoginView(er.message); } });
 }
-async function loadAdmin() { A.data = await API.call("adminGet", { code: A.code }); A.data.students.sort((a, b) => a.cls - b.cls || a.num - b.num); }
+async function checkShort() {
+  if (A.short !== undefined || API.mode === "demo") return;
+  try { const dir = location.href.split("#")[0].replace(/[^/]*$/, ""); A.short = (await (await fetch(dir, { cache: "no-store" })).text()).includes("iv-index"); } catch { A.short = false; }
+}
+const urlBase = () => { const u = location.href.split("#")[0]; return A.short ? u.replace(/[^/]*$/, "") : u; };
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); } catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch {} ta.remove(); }
+  toast("주소를 복사했습니다.");
+}
+async function loadAdmin() { await checkShort(); A.data = await API.call("adminGet", { code: A.code }); A.data.students.sort((a, b) => a.cls - b.cls || a.num - b.num); }
 const ROSTER_HEAD = ["학년", "반", "번호", "이름", "생년월일", "가내신"];
 function downloadSheet(rows, name) {
   if (window.XLSX) { const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet(rows); ws["!cols"] = [{ wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 10 }]; XLSX.utils.book_append_sheet(wb, ws, "명단"); return XLSX.writeFile(wb, name + ".xlsx"); }
@@ -1253,9 +1275,12 @@ function renderAdmin() {
   const list = A.cls === "all" ? st : by(Number(A.cls));
   let body = "";
   if (A.tab === "status") body = `<div class="stats"><div class="card stat"><b>${st.filter((s) => s.inRoster).length}</b><span>명단에 있는 학생</span></div><div class="card stat"><b>${st.filter((s) => s.changed).length}</b><span>비밀번호를 만든 학생</span></div><div class="card stat"><b>${st.filter((s) => s.submitted).length}</b><span>답변을 제출한 학생</span></div><div class="card stat"><b>${st.filter((s) => s.released).length}</b><span>첨삭을 받은 학생</span></div></div>
-    <div class="card scroll"><table class="tbl"><tr><th>반</th><th class="r">명단</th><th class="r">들어옴</th><th class="r">제출</th><th class="r">첨삭 받음</th><th>담임 계정</th><th></th></tr>
-    ${D.classes.map((c) => { const r = by(c); return `<tr><td><b>${c}반</b></td><td class="r">${r.length}</td><td class="r">${r.filter((s) => s.changed).length}</td><td class="r">${r.filter((s) => s.submitted).length}</td><td class="r">${r.filter((s) => s.released).length}</td><td>${A.data.teachers[c] ? `<span class="chip green">비밀번호 있음</span>` : `<span class="chip amber">아직 없음</span>`}</td><td class="r"><a class="btn sm" href="#teacher-${c}">담임 화면</a></td></tr>`; }).join("")}</table></div>
-    <p class="muted small" style="margin-top:12px">모든 반의 답변을 직접 보고 첨삭하려면 <a href="#teacher-all">학년 전체 보기</a>로 들어가세요. 관리자 코드로 로그인합니다.</p>`;
+    <div class="card scroll"><table class="tbl"><tr><th>반</th><th class="r">명단</th><th class="r">들어옴</th><th class="r">제출</th><th class="r">첨삭 받음</th><th>담임</th></tr>
+    ${D.classes.map((c) => { const r = by(c); return `<tr><td><b>${c}반</b></td><td class="r">${r.length}</td><td class="r">${r.filter((s) => s.changed).length}</td><td class="r">${r.filter((s) => s.submitted).length}</td><td class="r">${r.filter((s) => s.released).length}</td><td>${A.data.teachers[c] ? `<b>${esc(A.data.teachers[c].name || "이름 없음")}</b>` : `<span class="chip amber">계정 없음</span>`}</td></tr>`; }).join("")}</table></div>
+    <p class="muted small" style="margin-top:12px">모든 반의 답변을 직접 보고 첨삭하려면 <a href="#teacher-all">학년 전체 보기</a>로 들어가세요. 관리자 코드로 로그인합니다.</p>
+    <div class="card pad urls" style="margin-top:16px"><h3 style="font-size:18px;font-weight:800;margin-bottom:4px">주소 안내</h3>
+      <p class="muted small" style="margin-bottom:8px">학생과 선생님께 안내할 주소입니다. 담임은 모두 같은 주소로 들어가고, 로그인하는 이름과 비밀번호에 따라 자기 반이 나옵니다.</p>
+      ${[["학생", ""], ["담임", "#teacher"], ["관리자", "#admin"]].map(([l, h]) => `<div class="u"><b>${l}</b><code>${esc(urlBase() + h)}</code><a class="btn sm pill" href="${esc(urlBase() + h)}" target="_blank" rel="noopener" data-act="aOpen">열기</a><button class="btn sm pill" data-act="aCopy" data-u="${esc(urlBase() + h)}">주소 복사</button></div>`).join("")}</div>`;
   if (A.tab === "students") {
     const noBirth = st.filter((x) => x.inRoster && !x.birth).length, clsN = new Set(st.map((x) => x.cls)).size;
     body = `<div class="card pad">
@@ -1307,13 +1332,17 @@ function renderAdmin() {
       ${D.schools.filter((x) => !x.custom).map((x) => { const ev = eventsOf(x), nx = nextEvent(x); return `<div class="schblock" data-id="${x.id}"><h4>${esc(x.name)}${nx ? `<span class="chip blue">${esc(dday(x))}</span>` : ev.length ? `<span class="chip">일정 모두 지남</span>` : `<span class="chip amber">일정 없음</span>`}${x.hidden ? `<span class="chip">학생 화면에서 숨김</span>` : ""}${x.yogang ? `<span class="muted small" style="font-weight:500">${esc(x.yogang.title || x.yogang.file)}</span>` : ""}</h4>
         ${ev.length ? SHEAD : ""}${ev.map(srow).join("")}<div style="display:flex;gap:8px"><button class="btn sm" data-act="aSchAdd">일정 추가</button><button class="btn sm primary" data-act="aSchSave" style="margin-left:auto">저장</button></div></div>`; }).join("")}</div>`;
   }
-  if (A.tab === "teachers") body = `<div class="card scroll"><table class="tbl"><tr><th>반</th><th>상태</th><th>새 비밀번호 정하기</th><th></th></tr>
-    ${D.classes.map((c) => `<tr><td><b>${c}반 담임</b></td><td>${A.data.teachers[c] ? `<span class="chip green">비밀번호 있음</span>` : `<span class="chip amber">아직 없음</span>`}</td>
-      <td><div style="display:flex;gap:8px;max-width:320px"><input class="input" id="tp-${c}" placeholder="4자 이상" autocomplete="off"><button class="btn" data-act="aSetT" data-cls="${c}">${A.data.teachers[c] ? "바꾸기" : "만들기"}</button></div></td>
-      <td class="r">${A.data.teachers[c] ? `<button class="btn sm ghost danger" data-act="aDelT" data-cls="${c}">계정 닫기</button>` : ""}</td></tr>`).join("")}</table></div>
-    <div class="card pad" style="margin-top:14px"><h3 style="font-size:15px;font-weight:800;margin-bottom:8px">담임 선생님께 이렇게 알려 주세요</h3>
-      <ol style="margin:0;padding-left:18px"><li>반별 주소로 들어갑니다. 예: <b>${esc(location.origin === "null" ? "(사이트 주소)" : location.origin + location.pathname)}#teacher-3</b></li><li>여기서 정한 비밀번호로 로그인하고, 오른쪽 위 '비밀번호 바꾸기'에서 본인 것으로 바꿉니다.</li><li>'AI 설정'에서 본인 API 키를 넣습니다. 안내가 화면에 나옵니다.</li></ol>
-      <p class="muted small" style="margin-top:10px">관리자 코드 자체는 Netlify의 환경변수 TEACHER_CODE에서 바꿉니다.</p></div>`;
+  if (A.tab === "teachers") body = `<div class="card pad">
+      <h3 style="font-size:18px;font-weight:800;margin-bottom:4px">담임 계정</h3>
+      <p class="muted small" style="margin-bottom:12px">반마다 담임 이름을 넣고 '만들기'를 누르면 초기 비밀번호 <b>1234</b>로 계정이 만들어집니다. 담임 선생님은 담임 주소에서 이름과 비밀번호로 로그인하면 자기 반만 보이고, 처음 들어오면 비밀번호를 바꾸라는 창이 뜹니다. 이미 있는 계정은 비밀번호 칸을 비워 두면 이름만 바뀝니다.</p>
+      <div style="overflow-x:auto"><table class="roster" id="tTbl"><thead><tr><th class="w1">반</th><th>담임 이름</th><th>비밀번호</th><th>상태</th><th></th></tr></thead><tbody>
+      ${D.classes.map((c) => { const t = A.data.teachers[c]; return `<tr data-cls="${c}"><td><b>${c}반</b></td>
+        <td><input class="input" data-t="name" value="${esc(t?.name || "")}" placeholder="예: 홍길동" aria-label="${c}반 담임 이름"></td>
+        <td><input class="input" data-t="pass" placeholder="${t ? "바꿀 때만 입력" : "비우면 1234"}" autocomplete="off" aria-label="${c}반 비밀번호"></td>
+        <td style="white-space:nowrap">${t ? `<span class="chip green">사용 중</span>` : `<span class="chip amber">아직 없음</span>`}</td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn sm pill primary" data-act="aSetT">${t ? "저장" : "만들기"}</button>${t ? ` <button class="btn sm danger" data-act="aDelT" title="계정 닫기">✕</button>` : ""}</td></tr>`; }).join("")}
+      </tbody></table></div>
+      <p class="muted small" style="margin-top:12px">담임 선생님은 로그인한 뒤 오른쪽 위 '비밀번호 바꾸기'에서 본인 비밀번호로 바꿀 수 있고, 'AI 설정'에서 본인 API 키를 넣습니다. 관리자 코드 자체는 Netlify의 환경변수 TEACHER_CODE에서 바꿉니다.</p></div>`;
   app.innerHTML = `<header class="nav"><div class="in"><div class="brand"><b>${LOGO}</b><span class="hide-m">관리자</span></div>
       <div class="seg">${[["status", "현황"], ["students", "학생 명단·비밀번호·가내신"], ["dates", "입시 일정"], ["teachers", "담임 계정"]].map(([k, l]) => `<button class="${A.tab === k ? "on" : ""}" data-act="aTab" data-v="${k}">${l}</button>`).join("")}</div>
       <div class="sp"><button class="btn sm" data-act="aBank">질문·꿀팁 관리</button><button class="btn sm ghost hide-m" data-act="aReload">새로 고침</button><button class="btn sm" data-act="aLogout">나가기</button></div></div></header>
@@ -1341,6 +1370,7 @@ app.addEventListener("change", async (e) => {
 });
 app.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-act]"); if (!b) return; const act = b.dataset.act;
+  if (act === "aOpen") return;
   if (b.tagName === "A") e.preventDefault();
   /* 학생 */
   if (act === "logout") { if (S.view === "work") await saveStudent(); S.me = null; S.pin = ""; return renderStudent(); }
@@ -1367,6 +1397,7 @@ app.addEventListener("click", async (e) => {
     try {
       if (act === "aReload") { await loadAdmin(); toast("새로 불러왔습니다."); }
       if (act === "aBank") { SS.set("iv-teacher-all", JSON.stringify({ cls: "all", pass: A.code })); T.auth = null; T.startView = "bank"; return go("#teacher-all"); }
+      if (act === "aCopy") return copyText(b.dataset.u);
       if (act === "aAi") return aiSettingsModal();
       if (act === "aYoPick") { if (!aiCfg()) { toast("먼저 AI 연결을 설정하세요."); return aiSettingsModal(); } return $("#yoFile").click(); }
       if (act === "aYoDrop") A.found.splice(Number(b.dataset.i), 1);
@@ -1402,15 +1433,19 @@ app.addEventListener("click", async (e) => {
       }
       if (act === "aReset") { if (!(await ask("비밀번호 초기화", `${b.dataset.name} 학생의 비밀번호를 생년월일 6자리로 되돌립니다. 다음에 들어올 때 새 비밀번호를 다시 만들게 됩니다.`, "초기화"))) return; await API.call("adminResetStudent", { code: A.code, key: b.dataset.key }); await loadAdmin(); toast("생년월일로 초기화했습니다."); }
       if (act === "aRemove") { if (!(await ask("학생 삭제", `${b.dataset.name} 학생을 명단에서 빼고, 쓴 답변과 첨삭도 함께 지웁니다. 되돌릴 수 없습니다.`, "삭제", true))) return; await API.call("adminRemoveStudent", { code: A.code, key: b.dataset.key, withData: true }); await loadAdmin(); toast("삭제했습니다."); }
-      if (act === "aSetT") { const v = $("#tp-" + b.dataset.cls).value.trim(); if (v.length < 4) return toast("비밀번호는 4자 이상이어야 합니다."); await API.call("adminSetTeacher", { code: A.code, cls: Number(b.dataset.cls), pass: v }); await loadAdmin(); toast(`${b.dataset.cls}반 담임 비밀번호를 정했습니다.`); }
-      if (act === "aDelT") { if (!(await ask("담임 계정 닫기", `${b.dataset.cls}반 담임 로그인을 막습니다. 새 비밀번호를 정하면 다시 쓸 수 있습니다.`, "닫기", true))) return; await API.call("adminSetTeacher", { code: A.code, cls: Number(b.dataset.cls), pass: "" }); await loadAdmin(); toast("계정을 닫았습니다."); }
+      if (act === "aSetT") { const tr = b.closest("tr"), cls = Number(tr.dataset.cls), name = $("[data-t=name]", tr).value.trim(), pass = $("[data-t=pass]", tr).value.trim();
+        if (!name) return toast("담임 이름을 적어 주세요.");
+        const dup = D.classes.find((c) => c !== cls && (A.data.teachers[c]?.name || "").replace(/\s/g, "") === name.replace(/\s/g, ""));
+        if (dup && !(await ask("같은 이름이 있습니다", `${dup}반 담임도 '${name}'입니다. 이름이 같으면 비밀번호로 반을 구분하므로, 두 반의 비밀번호를 서로 다르게 해 주세요.`, "그대로 저장"))) return;
+        const fresh = !A.data.teachers[cls]; await API.call("adminSetTeacher", { code: A.code, cls, name, pass }); await loadAdmin(); toast(fresh && !pass ? `${cls}반 담임 계정을 만들었습니다. 초기 비밀번호는 1234입니다.` : `${cls}반 담임 계정을 저장했습니다.`); }
+      if (act === "aDelT") { const cls = Number(b.closest("tr").dataset.cls); if (!(await ask("담임 계정 닫기", `${cls}반 담임 로그인을 막습니다. 다시 만들면 쓸 수 있습니다.`, "닫기", true))) return; await API.call("adminSetTeacher", { code: A.code, cls, remove: true }); await loadAdmin(); toast("계정을 닫았습니다."); }
     } catch (er) { toast(er.message); }
     return renderAdmin();
   }
 
   /* 담임 */
   if (!T.auth) return;
-  if (act === "tLogout") { SS.del("iv-teacher-" + T.auth.cls); const c = T.auth.cls; T.auth = null; return teacherLoginView(c); }
+  if (act === "tLogout") { const c = T.auth.cls; SS.del(tKey(c)); T.auth = null; return c === "all" ? go("#admin") : teacherLoginView(c); }
   if (act === "tPass") return teacherPassModal();
   if (act === "aiSettings") return aiSettingsModal();
   if (act === "tview") { if (T.view === "bank") readBank(); T.view = b.dataset.v; return renderTeacher(); }
@@ -1487,13 +1522,11 @@ function route() {
   $$(".modal").forEach((m) => m.remove());
   const h = ROUTE;
   if (h === "#admin") return renderAdmin();
-  const m = h.match(/^#teacher(?:-(\w+))?$/);
-  if (m) {
-    if (!m[1]) return teacherPicker();
-    const cls = m[1] === "all" ? "all" : Number(m[1]);
-    if (T.auth && String(T.auth.cls) === String(cls)) return renderTeacher();
-    const saved = getJ(SS, "iv-teacher-" + cls);
-    if (saved) { app.innerHTML = `<div class="auth"><span class="muted">불러오는 중</span></div>`; return teacherEnter(saved).catch((e) => { SS.del("iv-teacher-" + cls); teacherLoginView(cls, e.message); }); }
+  if (/^#teacher/.test(h)) {
+    const cls = h === "#teacher-all" ? "all" : "mine";
+    if (T.auth && (T.auth.cls === "all") === (cls === "all")) return renderTeacher();
+    const saved = getJ(SS, tKey(cls));
+    if (saved) { app.innerHTML = `<div class="auth"><span class="muted">불러오는 중</span></div>`; return teacherEnter(saved).catch((e) => { SS.del(tKey(cls)); teacherLoginView(cls, e.message); }); }
     T.auth = null; return teacherLoginView(cls);
   }
   renderStudent();
