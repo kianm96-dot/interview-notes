@@ -4,7 +4,7 @@
 import { getStore } from "@netlify/blobs";
 import { createHash, randomBytes } from "node:crypto";
 
-const SERVER_VERSION = 12; // 화면(interview.html)과 짝이 맞는지 확인하는 번호
+const SERVER_VERSION = 13; // 화면(interview.html)과 짝이 맞는지 확인하는 번호
 const MAX_ANSWER = 3000;
 class Http extends Error { constructor(message, status = 400, extra = {}) { super(message); this.status = status; this.extra = extra; } }
 
@@ -247,6 +247,16 @@ async function handle(body, store) {
 
   if (action && action.startsWith("teacher")) {
     const who = await teacherAuth(store, body.auth);
+
+    // AI 연결(키, 모델, 지침)을 계정에 묶어 저장: 어느 컴퓨터에서 로그인해도 그대로 쓴다.
+    // 담임은 자기 반 것만, 관리자는 관리자 것만 읽고 쓸 수 있다.
+    if (action === "teacherGetAi" || action === "teacherSaveAi") {
+      const path = "ai/" + (who.scope === "all" ? "admin" : who.scope);
+      if (action === "teacherGetAi") { const rec = await store.get(path, { type: "json" }); return { set: !!rec, ai: rec ? rec.ai : null }; }
+      const ai = body.ai && typeof body.ai === "object" ? { provider: String(body.ai.provider || "").slice(0, 20), key: String(body.ai.key || "").slice(0, 300), model: String(body.ai.model || "").slice(0, 100), fallback: String(body.ai.fallback || "").slice(0, 100), extra: String(body.ai.extra || "").slice(0, 2000) } : null;
+      await store.setJSON(path, { ai, at: new Date().toISOString() });
+      return {};
+    }
 
     if (action === "teacherChangePass") {
       if (who.scope === "all") throw new Http("관리자 코드는 Netlify 환경변수에서 바꿉니다.");

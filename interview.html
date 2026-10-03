@@ -442,7 +442,7 @@ function groupByArea(qs) {
 /* =====================================================================
    저장소: 서버(Netlify 함수) 또는 미리보기(이 브라우저)
    ===================================================================== */
-const NEED_SERVER = 12; // 이 화면이 필요로 하는 서버 파일(interview.mjs) 번호
+const NEED_SERVER = 13; // 이 화면이 필요로 하는 서버 파일(interview.mjs) 번호
 const API = {
   mode: "server", stale: false,
   async probe() {
@@ -552,6 +552,9 @@ function demo(action, p) {
     else { const t = db.t[Number(a.cls)]; if (!t) fail(`${a.cls}반 담임 계정이 없습니다. 관리자 페이지에서 먼저 만들어 주세요.`); if (t.pass !== a.pass) fail("비밀번호가 맞지 않습니다."); who = { scope: Number(a.cls), name: t.name, label: `${a.cls}반 담임 ${t.name}` }; }
     const inScope = (k) => who.scope === "all" || k.startsWith(who.scope + "-");
     if (action === "teacherLogin") return { who };
+    db.ai = db.ai || {}; const aiPath = who.scope === "all" ? "admin" : String(who.scope);
+    if (action === "teacherGetAi") return { set: aiPath in db.ai, ai: db.ai[aiPath] || null };
+    if (action === "teacherSaveAi") { db.ai[aiPath] = p.ai || null; save(); return {}; }
     if (action === "teacherChangePass") { if (String(p.newPass).length < 4) fail("비밀번호는 4자 이상이어야 합니다."); db.t[who.scope].pass = p.newPass; save(); return {}; }
     if (action === "teacherList") {
       const map = {};
@@ -862,6 +865,19 @@ const aiKeyName = () => "iv-ai-" + (inAdmin() || (T.auth && T.auth.cls === "all"
 const aiWho = () => (inAdmin() ? "관리자" : T.who.label);
 const rerender = () => (inAdmin() ? renderAdmin() : renderTeacher());
 const aiCfg = () => getJ(LS, aiKeyName());
+// AI 연결은 계정에 묶여 서버에 저장된다. 로그인하면 서버 것을 가져와 이 브라우저에 맞춰 둔다.
+const aiAuth = () => (inAdmin() ? { cls: "all", pass: A.code } : T.auth);
+async function syncAi() {
+  try {
+    const r = await API.call("teacherGetAi", { auth: aiAuth() });
+    if (r.set) { if (r.ai && r.ai.key) LS.set(aiKeyName(), JSON.stringify(r.ai)); else LS.del(aiKeyName()); }
+    else if (aiCfg()) await API.call("teacherSaveAi", { auth: aiAuth(), ai: aiCfg() }); // 예전에 이 컴퓨터에만 저장해 둔 연결을 계정으로 옮긴다
+  } catch {}
+}
+async function saveAi(cfg) {
+  if (cfg) LS.set(aiKeyName(), JSON.stringify(cfg)); else LS.del(aiKeyName());
+  try { await API.call("teacherSaveAi", { auth: aiAuth(), ai: cfg }); return true; } catch (e) { toast("이 컴퓨터에는 저장했지만 계정에는 저장하지 못했습니다. " + e.message); return false; }
+}
 
 const tKey = (cls) => (cls === "all" ? "iv-teacher-all" : "iv-teacher");
 function teacherLoginView(cls, err = "") {
@@ -892,7 +908,7 @@ async function teacherEnter(auth, who) {
   if (!who) who = (await API.call("teacherLogin", { auth })).who;
   Object.assign(T, { auth, who, sel: null, tab: null, view: T.startView || "review", bank: null }); T.startView = null;
   SS.set(tKey(auth.cls), JSON.stringify(auth));
-  await loadRows(); renderTeacher();
+  await Promise.all([loadRows(), syncAi()]); renderTeacher();
 }
 async function loadRows() {
   const [r, c] = await Promise.all([API.call("teacherList", { auth: T.auth }), API.call("getData", { cls: T.auth.cls })]);
@@ -1114,7 +1130,7 @@ function aiSettingsModal() {
   const guide = (p) => { const g = AI_GUIDE[p]; return `<h4>${AI_NAME[p]} 키 받는 방법</h4><ol>${g.steps.map((s) => `<li>${s}</li>`).join("")}</ol>
     <p style="margin-top:8px"><a href="${g.url}" target="_blank" rel="noopener">${g.site} 열기</a> <span class="muted">(${g.url.replace("https://", "")})</span></p><p class="nb">${g.note} 사이트 화면의 메뉴 이름은 조금 다를 수 있습니다. 키는 보통 ${g.shape}합니다.</p>`; };
   const m = modal(`<h2>AI 연결 설정 <span class="chip">${esc(aiWho())}</span></h2>
-    <p class="desc">선생님 본인의 API 키를 넣으면 그 키로 AI를 씁니다. 키는 지금 이 브라우저에 ${esc(aiWho())} 몫으로만 저장되고, 서버나 다른 반 선생님에게 전달되지 않습니다.</p>
+    <p class="desc">선생님 본인의 API 키를 넣으면 그 키로 AI를 씁니다. 키는 ${esc(aiWho())} 계정에 저장되어 어느 컴퓨터에서 로그인해도 그대로 쓸 수 있고, 다른 반 선생님에게는 보이지 않습니다.</p>
     <label class="field"><span>1. AI 서비스 고르기</span><select id="aiP">${Object.keys(AI_NAME).map((k) => `<option value="${k}" ${cfg.provider === k ? "selected" : ""}>${AI_NAME[k]}</option>`).join("")}</select></label>
     <div class="guide" id="aiG">${guide(cfg.provider)}</div>
     <label class="field"><span>2. API 키 붙여 넣기</span><input id="aiK" type="password" value="${esc(cfg.key)}" autocomplete="off" placeholder="복사한 키를 붙여 넣으세요"></label>
@@ -1133,8 +1149,8 @@ function aiSettingsModal() {
   const fsel = $("#aiFS", m); fsel.onchange = () => { $("#aiF", m).value = fsel.value; };
   $("#aiP", m).onchange = () => { const p = $("#aiP", m).value; $("#aiM", m).value = AI_DEFAULT[p]; $("#aiF", m).value = AI_FALLBACK[p] || ""; sel.innerHTML = ""; sel.style.display = "none"; fsel.style.display = "none"; $("#aiG", m).innerHTML = guide(p); };
   $("#aiClose", m).onclick = () => m.remove();
-  $("#aiDel", m).onclick = () => { LS.del(aiKeyName()); m.remove(); rerender(); };
-  $("#aiSave", m).onclick = () => { const c = read(); if (!c.key || !c.model) return msg("키와 모델을 모두 적어 주세요.", true); LS.set(aiKeyName(), JSON.stringify(c)); m.remove(); rerender(); toast("AI 연결을 저장했습니다."); };
+  $("#aiDel", m).onclick = async () => { await saveAi(null); m.remove(); rerender(); };
+  $("#aiSave", m).onclick = async () => { const c = read(); if (!c.key || !c.model) return msg("키와 모델을 모두 적어 주세요.", true); busy($("#aiSave", m)); const ok = await saveAi(c); m.remove(); rerender(); if (ok) toast("AI 연결을 저장했습니다. 다른 컴퓨터에서 로그인해도 그대로 쓸 수 있습니다."); };
   $("#aiList", m).onclick = async () => { const c = read(); if (!c.key) return msg("먼저 API 키를 넣어 주세요.", true); msg("불러오는 중");
     try { const list = (await aiListModels(c)).sort((a, b) => b.localeCompare(a, "en", { numeric: true }));
       sel.innerHTML = `<option value="">불러온 모델 ${list.length}개 중에서 고르기 (최신 순)</option>` + list.map((x) => `<option ${x === c.model ? "selected" : ""}>${esc(x)}</option>`).join(""); sel.style.display = "";
@@ -1338,7 +1354,7 @@ async function copyText(t) {
   try { await navigator.clipboard.writeText(t); } catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch {} ta.remove(); }
   toast("주소를 복사했습니다.");
 }
-async function loadAdmin() { await checkShort(); A.data = await API.call("adminGet", { code: A.code });
+async function loadAdmin() { await checkShort(); A.data = await API.call("adminGet", { code: A.code }); if (!A.aiSynced) { A.aiSynced = true; await syncAi(); }
   A.data.students.forEach((x) => EXTRA_CLASSES.add(x.cls)); Object.keys(A.data.teachers).forEach((c) => EXTRA_CLASSES.add(Number(c))); buildData(); A.data.students.sort((a, b) => a.cls - b.cls || a.num - b.num); }
 const ROSTER_HEAD = ["학년", "반", "번호", "이름", "생년월일", "가내신"];
 function downloadSheet(rows, name) {
@@ -1510,7 +1526,7 @@ app.addEventListener("click", async (e) => {
   /* 관리자 */
   if (act === "aTab") { A.tab = b.dataset.v; return renderAdmin(); }
   if (act === "aCls") { A.cls = b.dataset.v; return renderAdmin(); }
-  if (act === "aLogout") { A.code = ""; SS.del("iv-admin"); return adminLoginView(); }
+  if (act === "aLogout") { A.code = ""; A.aiSynced = false; SS.del("iv-admin"); return adminLoginView(); }
   if (A.code && inAdmin() && /^a[A-Z]/.test(act)) {
     try {
       if (act === "aReload") { busy(b, "불러오는 중"); await loadAdmin(); toast("새로 불러왔습니다."); }
